@@ -70,7 +70,7 @@ describe("Container", () => {
     );
 
     describe("#Shutdown", async () =>
-        it("should return the state of the container == 'RUNNING'", async () => {
+        it("should return the state of the container == 'STOPPED'", async () => {
             await c.shutdown();
             assert.equal(c.state, "STOPPED");
         })

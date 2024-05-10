@@ -1,3 +1,8 @@
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 03-07-2024
+ */
+
 import {Personality} from "./Personality"
 import {lxc_attach_env_policy} from "./lxc_attach_env_policy";
 import {LXC_ATTACH} from "./LXC_ATTACH";

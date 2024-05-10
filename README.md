@@ -1,22 +1,21 @@
 ## Development Prerequisites
-1. Install NodeJS </br>
-[Install NodeJS from distribution](https://github.com/nodesource/distributions#installation-instructions)
-2. Installing NAPI build-tools
+
+1. [Install NodeJS](https://github.com/nodesource/distributions#installation-instructions)
+
+2. Setting up the project
+
 ```shell
-apt update -y && apt upgrade -y
+npm run setup
 ```
-```shell
-apt install gcc g++ cmake
-```
-3. Installing LXC and the needed development files
-```shell
-apt install lxc lxc-dev -y
-```
-3.1. Checking LXC configuration
+
+3. Checking LXC configuration
+
 ```shell
 lxc-checkconfig
 ```
+
 the resulting `lxc-checkconfig` will show something like
+
 ```text
 LXC version 5.0.2
 Kernel configuration not found at /proc/config.gz; searching...
@@ -67,15 +66,4 @@ File capabilities: enabled
 
 Note : Before booting a new kernel, you can check its configuration
 usage : CONFIG=/path/to/config /usr/bin/lxc-checkconfig
-```
-
-for lxc from source
-```shell
-  apt-get update -y && apt-get upgrade -y
-  apt-get install -y pkg-config libseccomp-dev libssl-dev libselinux-dev libselinux-dev libapparmor-dev libcap-dev libsystemd-dev
-```
-
-```shell
-meson setup -Dprefix=/usr build
-meson compile -C build
 ```

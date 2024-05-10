@@ -1,3 +1,8 @@
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 03-07-2024
+ */
+
 export * from "./bdev_specs"
 export * from "./LXC_ATTACH"
 export * from "./lxc_attach_env_policy"

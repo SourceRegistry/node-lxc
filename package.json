@@ -1,8 +1,9 @@
 {
-  "name": "node-lxc",
-  "version": "1.0.0",
-  "description": "NodeJS LXC bindings",
-  "author": "Alexander Slaa",
+  "name": "@projectsource/node-lxc",
+  "version": "0.0.1",
+  "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
+  "url":
+  "author": "A.P.A. Slaa",
   "license": "MIT",
   "main": "index.ts",
   "private": true,
@@ -28,6 +29,8 @@
     "clean": "node-gyp clean && npm run configure && npm run build",
     "wipe": "node-gyp clean && npm run configure",
     "configure": "node-gyp configure",
+    "example:create": "ts-node examples/create/index.ts",
+    "example:console": "ts-node examples/console/index.ts",
     "example:attach": "ts-node examples/attach/index.ts",
     "example:attach-streams": "ts-node examples/attach-streams/index.ts",
     "example:checkpoint": "ts-node examples/checkpoint/index.ts",

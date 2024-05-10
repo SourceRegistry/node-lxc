@@ -1,3 +1,8 @@
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 03-07-2024
+ */
+
 import {LXC_CLONE} from "./LXC_CLONE";
 
 export type lxc_clone_options =

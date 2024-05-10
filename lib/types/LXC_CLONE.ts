@@ -1,3 +1,8 @@
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 03-07-2024
+ */
+
 export enum LXC_CLONE {
     /**
      * Do not edit the rootfs to change the hostname

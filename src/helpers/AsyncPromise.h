@@ -1,5 +1,5 @@
 //
-// Created by root on 1/14/24.
+// Created by A.P.A. Slaa (a.p.a.slaa@projectsource.nl) on 1/14/24.
 //
 
 #ifndef NODE_LXC_PROMISEWORKER_H

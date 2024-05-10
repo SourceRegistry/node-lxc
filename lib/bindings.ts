@@ -1,3 +1,8 @@
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 03-07-2024
+ */
+
 import {
     bdev_specs, lxc_attach_options, lxc_clone_options,
     lxc_console_log, LXC_CREATE, LXC_MIGRATE, LXC_MOUNT, lxc_mount, lxc_snapshot, migrate_opts
@@ -61,8 +66,8 @@ export type Container = {
      */
     get running(): boolean;
     /**
-     * Determine process ID of the containers init process.
-     * @returns pid of init process as seen from outside the container.
+     * Determine process ID of the containers' init process.
+     * @returns pid of the init process as seen from outside the container.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#a8ce63dc530f57a3a198ed2d0f0c229a9)
      */
     get initPID(): number;
@@ -87,7 +92,7 @@ export type Container = {
     set daemonize(value: boolean);
 
     /**
-     * Determine full path to the containers configuration file.
+     * Determine the full path to the containers' configuration file.
      * Each container can have a custom configuration path.
      * However, by default it will be set to either the LXCPATH configure variable, or the lxcpath value in the LXC_GLOBAL_CONF configuration file (i.e. /etc/lxc/lxc.conf).
      * @returns full path to configuration file
@@ -95,7 +100,7 @@ export type Container = {
      */
     get configPath(): string;
     /**
-     * Set the full path to the containers configuration file.
+     * Set the full path to the containers' configuration file.
      * @param path {string} Full path to configuration file.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#ad140523960327ab5537629ee8dc62dd3)
      */
@@ -207,11 +212,11 @@ export type Container = {
          */
         bdevtype?: string,
         /**
-         * Additional parameters for the backing store (for example LVM volume group to use).
+         * Additional parameters for the backing store (for example, LVM volume group to use).
          */
         bdev_specs?: Partial<bdev_specs>,
         /**
-         * Additional parameters for the backing store (for example LVM volume group to use).
+         * Additional parameters for the backing store (for example, LVM volume group to use).
          */
         flags?: LXC_CREATE
     }): Promise<void>;
@@ -238,18 +243,18 @@ export type Container = {
     /**
      * Clear a configuration item.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#a4521fb10eee10cf6ca9b33d3ef1f996a)
-     * @param key {string} Name of option to clear.
+     * @param key {string} Name of the option to clear.
      * @see analog of {setConfigItem}
      */
     clearConfigItem(key: string): void;
     /**
      * Retrieve the value of a config item.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#a7411db2a0e7a8471c41a4a58d8e83b33)
-     * @param key {string} Name of option to get.
+     * @param key {string} Name of the option to get.
      */
     getConfigItem(key: string): string | undefined;
     /**
-     * Retrieve the value of a config item from running container.
+     * Retrieve the value of a config item from a running container.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#aeb0f5f1589ba5dc14d5d1e1c0cb87f96)
      * @param key
      */

@@ -1,3 +1,7 @@
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 03-07-2024
+ */
 
 export enum LXC_MIGRATE{
     MIGRATE_PRE_DUMP = 0,

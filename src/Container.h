@@ -1,6 +1,7 @@
-//
-// Created by A.P.A.Slaa (a.p.a.slaa@projectsource.nl) on 12/16/23.
-//
+/**
+ * @author A.P.A. Slaa (a.p.a.slaa@projectsource.nl) ProjectSource V.O.F.
+ * @date 16-12-2023
+ */
 
 #ifndef NODE_LXC_CONTAINER_H
 #define NODE_LXC_CONTAINER_H

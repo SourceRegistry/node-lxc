@@ -1,5 +1,5 @@
 import {Container} from "../../lib/bindings";
-import {createReadStream, createWriteStream, openSync} from "node:fs";
+import {openSync} from "node:fs";
 
 const name = "test-ct"
 

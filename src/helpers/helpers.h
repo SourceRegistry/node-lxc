@@ -1,5 +1,5 @@
 //
-// Created by root on 2/21/24.
+// Created by A.P.A. Slaa (a.p.a.slaa@projectsource.nl) on 2/21/24.
 //
 
 #ifndef NODE_LXC_HELPERS_H
