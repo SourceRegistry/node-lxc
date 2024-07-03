@@ -1,8 +1,8 @@
 {
-  "name": "@projectsource/node-lxc",
+  "name": "@sourceregistry/node-lxc",
   "version": "0.0.1",
   "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
-  "url":"https://github.com/AlexanderSlaa/node-lxc",
+  "url":"https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
   "author": "A.P.A. Slaa",
   "license": "MIT",
   "main": "index.ts",
