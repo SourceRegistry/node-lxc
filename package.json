@@ -1,6 +1,6 @@
 {
   "name": "@sourceregistry/node-lxc",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
   "url": "https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
   "author": "A.P.A. Slaa",
@@ -25,7 +25,7 @@
   },
   "scripts": {
     "setup": "./scripts/setup/setup.sh",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"Error: no test specified\" && exit 0",
     "tests": "ts-node tests/index.ts",
     "test:build": "npm run build && npm run test",
     "rebuild:dev": "npx tsc && node-gyp rebuild --debug",
