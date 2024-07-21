@@ -22,7 +22,6 @@ build:
       - node_modules
       - package
   script:
-    - npm install
     - npm run build
 
 test:

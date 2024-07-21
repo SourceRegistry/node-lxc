@@ -25,7 +25,8 @@
   },
   "scripts": {
     "setup": "./scripts/setup/setup.sh",
-    "test": "ts-node tests/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tests": "ts-node tests/index.ts",
     "test:build": "npm run build && npm run test",
     "rebuild:dev": "npx tsc && node-gyp rebuild --debug",
     "build:dev": "node-gyp build --debug",
