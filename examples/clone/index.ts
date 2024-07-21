@@ -1,4 +1,4 @@
-import {Container, LXC_LOGLEVEL} from "../../lib/bindings";
+import {Container, LXC_LOGLEVEL} from "../../lib";
 
 const name = "test-ct"
 

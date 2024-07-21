@@ -1,4 +1,4 @@
-import {Container, LXC_LOGLEVEL} from "../../lib/bindings";
+import {Container, LXC_LOGLEVEL} from "../../lib";
 import {readdir} from "node:fs/promises";
 
 const name = "test-ct"

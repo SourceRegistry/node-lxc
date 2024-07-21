@@ -10,12 +10,7 @@ import {
 
 export * from "./types"
 
-const bindings = process.env["NODE_ENV"] === "development" ? require("./../build/Debug/node-lxc.node") : require("./../build/Release/node-lxc.node");
-
-if (process.env["NODE_ENV"] === "development") {
-    console.warn("!!!RUNNING IN DEVELOPMENT MODE!!!");
-}
-
+import binding from "./binding"
 
 //region types
 
@@ -510,7 +505,7 @@ export type LXC = {
      * @param lxcpath
      * @constructor
      */
-    ListAllDefinedContainer(lxcpath?: string): string[],
+    ListAllDefinedContainers(lxcpath?: string): string[],
     /**
      * @link [https://linuxcontainers.org/apidoc](//TODO)
      * @param lxcpath
@@ -523,6 +518,8 @@ export type LXC = {
     Container: Container
 }
 
-export const LXC: LXC = bindings;
+export const LXC: LXC = binding;
 
 export const Container = LXC.Container;
+
+export * from "./types"

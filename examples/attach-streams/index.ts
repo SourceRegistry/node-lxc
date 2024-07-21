@@ -1,4 +1,4 @@
-import {Container} from "../../lib/bindings";
+import {Container} from "../../lib";
 import {openSync} from "node:fs";
 
 const name = "test-ct"

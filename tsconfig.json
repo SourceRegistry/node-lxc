@@ -1,14 +1,22 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2020",
-    "sourceMap": true
+    "target": "esnext",
+    "sourceMap": true,
+    "outDir": "./build/tsc",
+    "strict": true,
+    "lib": [
+      "dom",
+      "esnext"
+    ],
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "declaration": true,
+    "module": "CommonJS",
+    "noImplicitAny": false,
+    "experimentalDecorators": true
   },
-  "exclude": [
-    "node_modules",
-    "src",
-    "cmake-build-debug",
-    "build",
-    "old"
+  "include": [
+    "lib"
   ]
 }
+

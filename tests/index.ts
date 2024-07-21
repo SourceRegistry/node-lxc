@@ -1,4 +1,4 @@
-import {Container, LXC, LXC_LOGLEVEL} from "../lib/bindings";
+import {Container, LXC, LXC_LOGLEVEL} from "../lib";
 
 import {describe, it} from "node:test";
 import assert = require("node:assert");

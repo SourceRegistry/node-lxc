@@ -1,10 +1,10 @@
-import {LXC} from "../../lib/bindings";
+import {LXC} from "../../lib";
 
 async function main() {
     console.log("===== ACTIVE =====");
     LXC.ListAllActiveContainers().forEach(console.log)
     console.log("===== DEFINED =====");
-    LXC.ListAllDefinedContainer().forEach(console.log)
+    LXC.ListAllDefinedContainers().forEach(console.log)
     console.log("===== ALL =====");
     LXC.ListAllContainers().forEach(console.log)
 }

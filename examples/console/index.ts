@@ -1,4 +1,4 @@
-import {Container} from "../../lib/bindings";
+import {Container} from "../../lib";
 
 const name = "node-ct"
 

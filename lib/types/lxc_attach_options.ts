@@ -97,7 +97,7 @@ export type lxc_attach_options = ({
         /**
          * lsm label to set.
          */
-        lsm_label: string
+        lsm_label?: string
     }
 
 

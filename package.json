@@ -2,11 +2,16 @@
   "name": "@sourceregistry/node-lxc",
   "version": "0.0.1",
   "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
-  "url":"https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
+  "url": "https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
   "author": "A.P.A. Slaa",
   "license": "MIT",
-  "main": "index.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "private": true,
+  "files": [
+    "lib",
+    "bin"
+  ],
   "dependencies": {
     "node-addon-api": "^7.1.0"
   },
@@ -19,16 +24,16 @@
     "ts-node": "^10.9.1"
   },
   "scripts": {
-    "setup": "apt update -y && apt upgrade -y && apt install gcc g++ cmake && apt install lxc lxc-dev -y && npm install && npm run configure",
-    "install": "cmake-js compile",
+    "setup": "./scripts/setup/setup.sh",
     "test": "ts-node tests/index.ts",
     "test:build": "npm run build && npm run test",
     "rebuild:dev": "npx tsc && node-gyp rebuild --debug",
     "build:dev": "node-gyp build --debug",
-    "build": "node-gyp build",
+    "build": "./scripts/build/build.sh",
     "clean": "node-gyp clean && npm run configure && npm run build",
     "wipe": "node-gyp clean && npm run configure",
     "configure": "node-gyp configure",
+    "preview": "npm run build && mkdir -p ./node_modules/@sourceregistry/node-lxc && cp -r ./package/* ./node_modules/@sourceregistry/node-lxc",
     "example:create": "ts-node examples/create/index.ts",
     "example:console": "ts-node examples/console/index.ts",
     "example:attach": "ts-node examples/attach/index.ts",
