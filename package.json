@@ -1,13 +1,12 @@
 {
   "name": "@sourceregistry/node-lxc",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
   "url": "https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
   "author": "A.P.A. Slaa",
   "license": "MIT",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
-  "private": true,
   "files": [
     "lib",
     "bin"
