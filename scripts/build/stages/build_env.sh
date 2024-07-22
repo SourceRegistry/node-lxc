@@ -2,7 +2,7 @@ if [ "$#" -eq 0 ]; then
   echo "build_env.sh requires a log directory location as argument 1"
 fi
 
-LOG_FILENAME=${2:-"build_env"}
+LOG_FILENAME=${2:-"stage-build_env"}
 
 {
   printf "🚧️️ Setting up build environment\n"
@@ -14,8 +14,7 @@ LOG_FILENAME=${2:-"build_env"}
       apt upgrade -y &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-    exit 1
+    printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
   }
   {
     printf "   📚️ Installing g++ and cmake" &&
@@ -23,26 +22,23 @@ LOG_FILENAME=${2:-"build_env"}
       apt install g++ cmake -y &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-    exit 1
+    printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
   }
   {
-    printf "   📦️ Installing lxc and lxc-dev (header files)" &&
+    printf "   🗳️ Installing lxc and lxc-dev (header files)" &&
       echo "++++++[apt install lxc lxc-dev -y]++++++" &>>"$1/$LOG_FILENAME.log" &&
       apt install lxc lxc-dev -y &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-    exit 1
+    printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
   }
   {
-    printf "   📦️ Installing NodeJS dependencies" &&
+    printf "   🗳️ Installing NodeJS dependencies" &&
       echo "++++++[npm install]++++++" &>>"$1/$LOG_FILENAME.log" &&
       npm install &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-    exit 1
+    printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
   }
   {
     printf "   🔩️ Configuring node-gyp" &&
@@ -50,10 +46,8 @@ LOG_FILENAME=${2:-"build_env"}
       node-gyp clean &>>"$1/$LOG_FILENAME.log" && node-gyp configure &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-    exit 1
+    printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
   }
 } || {
-  printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-  exit 1
+    printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
 }

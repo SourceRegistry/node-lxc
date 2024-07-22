@@ -7,9 +7,15 @@ fi
 LOG_FILENAME=${2:-"stage-build_cpp"}
 
 {
-  printf "🏗️ Building C/C++ addon\n"
-  echo "++++++[node-gyp build]++++++" &>>"$1/$LOG_FILENAME.log"
-  node-gyp build &>>"$1/$LOG_FILENAME.log" &&
+  printf "🧩 C/C++ addon\n"
+  echo "++++++[node-gyp build]++++++" &>>"$1/$LOG_FILENAME.log" &&
+    {
+      printf "   🏗️ Building C/C++ bindings (.node)" &&
+      node-gyp build &>>"$1/$LOG_FILENAME.log"  &&  echo "done" &>>"$1/$LOG_FILENAME.log" &&
+      printf " 🟢\n"
+    } || {
+      printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
+    }
     printf "   ➡️ Copying 'Release' binaries\n" &&
     {
       printf "      ➡️  ️Copying 'x86_64-linux-gnu' binary" &&
@@ -19,11 +25,7 @@ LOG_FILENAME=${2:-"stage-build_cpp"}
         cp -r build/Release/node-lxc.node ./package/bin/x86_64-linux-gnu/node-lxc.node &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
         printf " 🟢\n"
     } ||
-    {
-      printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-      exit 1
+    { printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
     }
-} || {
-  printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-  exit 1
-}
+} || { printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
+     }

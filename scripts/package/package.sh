@@ -1,11 +1,11 @@
 #!/bin/bash
 
-printf "🚀 Starting Build for '$(node -p "require('./package.json').name")'\n"
+printf "📦 Starting Packaging '$(node -p "require('./package.json').name")'\n"
 
 SCRIPT_DIR=$(realpath $(dirname $0))
 
 #region Setup logging
-LOG_DIR=${2:-"$SCRIPT_DIR/../logs/build/$(date +%s)"}
+LOG_DIR="$SCRIPT_DIR/../logs/build/$(date +%s)"
 mkdir -p "$LOG_DIR"
 printf "💬 You can find the logs in the script directory(%s)\n" "$LOG_DIR"
 #endregion
@@ -13,9 +13,8 @@ printf "💬 You can find the logs in the script directory(%s)\n" "$LOG_DIR"
 rm -r ./package &>>"$LOG_DIR/stage-remove.log"
 
 
-source "$SCRIPT_DIR/stages/build_env.sh" "$LOG_DIR"
-source "$SCRIPT_DIR/stages/build_cpp.sh" "$LOG_DIR"
-source "$SCRIPT_DIR/stages/build_ts.sh" "$LOG_DIR"
+sh -c "$SCRIPT_DIR/../build/build.sh" "$LOG_DIR"
+source "$SCRIPT_DIR/stages/package_miscellaneous.sh" "$LOG_DIR"
 
 #{
 #  printf "️💫 Running NodeJS Packaging script" &&

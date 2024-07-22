@@ -1,10 +1,10 @@
 # build_ts.sh
 
 if [ "$#" -eq 0 ]; then
-  echo "copy_package_json.sh requires a log directory location as argument 1"
+  echo "package_miscellaneous.sh requires a log directory location as argument 1"
 fi
 
-LOG_FILENAME=${2:-"action-copy_package_json"}
+LOG_FILENAME=${2:-"stage-package_miscellaneous"}
 
 {
   printf "📚 Adding miscellaneous files\n"
@@ -16,7 +16,7 @@ LOG_FILENAME=${2:-"action-copy_package_json"}
       cp -r ./examples/* ./package/examples/ &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
+    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
     exit 1
   }
   {
@@ -25,7 +25,7 @@ LOG_FILENAME=${2:-"action-copy_package_json"}
       cp ./package.json ./package/package.json &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
+    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
     exit 1
   }
   {
@@ -34,7 +34,7 @@ LOG_FILENAME=${2:-"action-copy_package_json"}
       cp ./LICENSE ./package/LICENSE &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
+    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
     exit 1
   }
   {
@@ -43,11 +43,11 @@ LOG_FILENAME=${2:-"action-copy_package_json"}
       cp ./README.md ./package/README.md &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
       printf " 🟢\n"
   } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
+    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
     exit 1
   }
 
 } || {
-  printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
+    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
   exit 1
 }

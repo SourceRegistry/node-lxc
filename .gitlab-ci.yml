@@ -5,12 +5,12 @@
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/npm.gitlab-ci.yml
 
 stages:
-  - build
+  - build-package
   - test
   - publish
 
 build:
-  stage: build
+  stage: build-package
   image: node:latest
   artifacts:
     paths:
@@ -22,7 +22,7 @@ build:
       - node_modules
       - package
   script:
-    - npm run build
+    - npm run package
 
 test:
   stage: test

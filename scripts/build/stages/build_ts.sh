@@ -4,7 +4,7 @@ if [ "$#" -eq 0 ]; then
   echo "build_ts.sh requires a log directory location as argument 1"
 fi
 
-LOG_FILENAME=${2:-"action-build_ts"}
+LOG_FILENAME=${2:-"stage-build_ts"}
 
 {
   printf "🔨 Compiling typescript files"
