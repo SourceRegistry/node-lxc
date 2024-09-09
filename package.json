@@ -35,6 +35,7 @@
     "wipe": "node-gyp clean && npm run configure",
     "configure": "node-gyp configure",
     "preview": "npm run build && mkdir -p ./node_modules/@sourceregistry/node-lxc && cp -r ./package/* ./node_modules/@sourceregistry/node-lxc",
+    "package": "./scripts/package/package.sh",
     "example:create": "ts-node examples/create/index.ts",
     "example:console": "ts-node examples/console/index.ts",
     "example:attach": "ts-node examples/attach/index.ts",
