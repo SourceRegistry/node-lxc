@@ -22,7 +22,7 @@ describe("Container", () => {
             if (!c.defined) {
                 await c.create({
                     template: "download",
-                    argv: ["--dist", "ubuntu", "--release", "lunar", "--arch", "amd64"]
+                    argv: ["--dist", "ubuntu", "--release", "jammy", "--arch", "amd64"]
                 })
             }
             assert.notEqual(c.defined, false);

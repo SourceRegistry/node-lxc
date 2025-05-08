@@ -1,0 +1,11 @@
+PROJECT_NAME           = "LXC Node.js Binding"
+INPUT                  = Container.h Container.cpp
+# Where to find your source files
+INPUT                  = ./src/*
+
+FILE_PATTERNS          = *.h *.cpp
+RECURSIVE              = YES
+EXTRACT_ALL            = YES
+
+GENERATE_HTML          = YES
+OUTPUT_DIRECTORY       = docs
