@@ -1,6 +1,6 @@
 {
   "name": "@sourceregistry/node-lxc",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
   "url": "https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
   "author": "A.P.A. Slaa",
@@ -13,15 +13,15 @@
     "examples"
   ],
   "dependencies": {
-    "node-addon-api": "^7.1.0"
+    "node-addon-api": "^8.3.1"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.6",
-    "@types/node": "^20.9.2",
-    "cmake-js": "^7.1.1",
-    "mocha": "^10.3.0",
-    "node-gyp": "^10.0.1",
-    "ts-node": "^10.9.1"
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.15.17",
+    "cmake-js": "^7.3.1",
+    "mocha": "^11.2.2",
+    "node-gyp": "^11.2.0",
+    "ts-node": "^10.9.2"
   },
   "scripts": {
     "setup": "./scripts/setup/setup.sh",
@@ -49,7 +49,8 @@
     "example:concurrent_stop": "ts-node examples/concurrent_stop/index.ts",
     "example:config": "ts-node examples/config/index.ts",
     "example:execute": "ts-node examples/execute/index.ts",
-    "example:keys": "ts-node examples/list_keys/index.ts"
+    "example:keys": "ts-node examples/list_keys/index.ts",
+    "example:images": "ts-node examples/images/index.ts"
   },
   "engines": {
     "node": "~10 >=10.20 || >=12.17"

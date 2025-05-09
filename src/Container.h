@@ -149,7 +149,6 @@ private:
 
     Napi::Value DevptsFd(const Napi::CallbackInfo &info);
 
-
     // Attach with wait for process lxc_attach_run_shell
     Napi::Value Attach(const Napi::CallbackInfo &info);
 
@@ -158,8 +157,7 @@ private:
 
     Napi::Value Console(const Napi::CallbackInfo &info);
 
-
-    struct lxc_container *_container;
+    lxc_container *_container;
 };
 
 #endif // NODE_LXC_CONTAINER_H

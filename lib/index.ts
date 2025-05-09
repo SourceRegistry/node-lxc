@@ -5,7 +5,8 @@
 
 import {
     bdev_specs, lxc_attach_options, lxc_clone_options,
-    lxc_console_log, LXC_CREATE, LXC_MIGRATE, LXC_MOUNT, lxc_mount, lxc_snapshot, migrate_opts
+    lxc_console_log, LXC_CREATE, LXC_MIGRATE, LXC_MOUNT, lxc_mount, lxc_snapshot, migrate_opts,
+    Image
 } from "./types";
 
 export * from "./types"
@@ -13,8 +14,6 @@ export * from "./types"
 import binding from "./binding"
 
 //region types
-
-
 export type ContainerState =
     "STOPPED"
     | "STARTING"
@@ -521,5 +520,42 @@ export type LXC = {
 export const LXC: LXC = binding;
 
 export const Container = LXC.Container;
+
+export const Images = {
+
+    repositories: {
+        linuxcontainers: {
+            'base.url': 'https://images.linuxcontainers.org',
+            'image.json': "https://images.linuxcontainers.org/meta/simplestreams/v1/images.json",
+            'index.json': "https://images.linuxcontainers.org/meta/simplestreams/v1/index.json",
+        }
+    },
+
+    async List(repository: keyof typeof Images.repositories = 'linuxcontainers'): Promise<Record<string, Image>>{
+        const imageURL = Images.repositories[repository]["image.json"];
+        const response = await fetch(imageURL);
+        if (!response.ok) throw new Error(`Failed to get image list from '${imageURL}'`, {cause: response});
+        const images = await response.json();
+        if (images?.content_id !== "images") throw new Error("Unknown json: content_id !== 'images'")
+        if (images?.datatype !== "image-downloads") throw new Error("Unknown json: datatype !== 'image-downloads'")
+        if (images?.format !== "products:1.0") throw new Error("Unknown json: format !== 'products:1.0'")
+        if (!images.products || typeof images.products !== 'object') throw new Error("Unknown json: products is not defined or is not of type object");
+        return images.products as Record<string, Image>;
+    },
+    
+    async Available(repository: keyof typeof Images.repositories = 'linuxcontainers'): Promise<string[]>{
+        const indexURL = Images.repositories[repository]["index.json"];
+        const response = await fetch(indexURL);
+        if (!response.ok) throw new Error(`Failed to get image index list from '${indexURL}'`, {cause: response});
+        const images = await response.json();
+        if (!images?.index) throw new Error("Unknown json: index is undefined")
+        if (!images?.index?.images || typeof images.index.images !== 'object') throw new Error("Unknown json: typeof index.images !== object")
+        if (images.index.images?.datatype !== "image-downloads") throw new Error("Unknown json: index.images.datatype !== 'image-downloads'")
+        if (images.index.images?.format !== "products:1.0") throw new Error("Unknown json: index.images.format !== 'products:1.0'")
+        if (!images.index.images?.products || !Array.isArray(images.index.images.products)) throw new Error("Unknown json: images.index.images.products is not defined or is not of type string[]");
+        return images.index.images?.products as string[];
+    }
+}
+
 
 export * from "./types"

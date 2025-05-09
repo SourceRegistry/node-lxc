@@ -1,95 +1,87 @@
 //
 // Created by A.P.A. Slaa (a.p.a.slaa@projectsource.nl) on 1/14/24.
+// Optimized version
 //
 
 #ifndef NODE_LXC_PROMISEWORKER_H
 #define NODE_LXC_PROMISEWORKER_H
 
 #include <napi.h>
-#include <stdexcept>
+#include <functional>
+#include <tuple>
+#include <string>
+#include <memory>
 
 template<typename... Args>
 class AsyncPromise : public Napi::AsyncWorker {
-
 public:
-
-    static Napi::Value UndefinedWrapper(AsyncPromise *worker, const std::tuple<Args...> &) {
+    // Static wrapper functions with const references where possible
+    static Napi::Value UndefinedWrapper(const AsyncPromise *worker, const std::tuple<Args...> &) {
         return worker->Env().Undefined();
     }
 
-    static Napi::Value NullWrapper(AsyncPromise *worker, const std::tuple<Args...> &) {
+    static Napi::Value NullWrapper(const AsyncPromise *worker, const std::tuple<Args...> &) {
         return worker->Env().Null();
     }
 
-    static Napi::String StdStringWrapper(AsyncPromise<std::string> *worker, const std::tuple<std::string> &tuple) {
+    static Napi::String StdStringWrapper(const AsyncPromise<std::string> *worker, const std::tuple<std::string> &tuple) {
         return Napi::String::New(worker->Env(), std::get<0>(tuple));
     }
 
-    static Napi::Array StringArrayWrapper(AsyncPromise<char **> *worker, const std::tuple<char **> &tuple) {
+    static Napi::Array StringArrayWrapper(const AsyncPromise<char **> *worker, const std::tuple<char **> &tuple) {
         auto array = Napi::Array::New(worker->Env());
         auto values = std::get<0>(tuple);
         if (values != nullptr) {
-            // Iterate over the array of strings obtained.
             for (int i = 0; values[i] != nullptr; ++i) {
-                // Convert each string to a Napi::Object Type and add it to the Napi::Array.
                 array[i] = Napi::String::New(worker->Env(), values[i]);
             }
-            // Free the memory allocated for the array of strings.
             free(values);
         }
         return array;
     }
 
-    static Napi::String CharStringWrapper(AsyncPromise<char *> *worker, const std::tuple<char *> &tuple) {
+    static Napi::String CharStringWrapper(const AsyncPromise<char *> *worker, const std::tuple<char *> &tuple) {
         return Napi::String::New(worker->Env(), std::get<0>(tuple));
     }
 
     static Napi::String
-    SizeCharStringWrapper(AsyncPromise<char *, size_t> *worker, const std::tuple<char *, size_t> &tuple) {
+    SizeCharStringWrapper(const AsyncPromise<char *, size_t> *worker, const std::tuple<char *, size_t> &tuple) {
         return Napi::String::New(worker->Env(), std::get<0>(tuple), std::get<1>(tuple));
     }
 
-    static Napi::Number NumberWrapper(AsyncPromise *worker, const std::tuple<Args...> &tuple) {
+    static Napi::Number NumberWrapper(const AsyncPromise *worker, const std::tuple<Args...> &tuple) {
         return Napi::Number::New(worker->Env(), std::get<0>(tuple));
     }
 
-    static Napi::Boolean BooleanWrapper(AsyncPromise *worker, const std::tuple<bool> &tuple) {
+    static Napi::Boolean BooleanWrapper(const AsyncPromise *worker, const std::tuple<bool> &tuple) {
         return Napi::Boolean::New(worker->Env(), std::get<0>(tuple));
     }
 
-public:
+    // Constructor using perfect forwarding for std::function arguments
     AsyncPromise(
-            Napi::Env &env,
-            std::function<void(AsyncPromise<Args...> *)> &&asyncFunction,
-            std::function<Napi::Value(AsyncPromise<Args...> *, std::tuple<Args...>)> &&valueWrapper,
+            const Napi::Env &env,
+            std::function<void(AsyncPromise<Args...> *)> asyncFunction,
+            std::function<Napi::Value(const AsyncPromise<Args...> *, const std::tuple<Args...> &)> valueWrapper = UndefinedWrapper,
             void *data = nullptr
-    ) :
-            Napi::AsyncWorker(env),
-            deferred_(Napi::Promise::Deferred::New(env)),
-            asyncFunction_(std::move(asyncFunction)),
-            valueWrapper_(std::move(valueWrapper)),
-            data_(data) {}
+    ) : Napi::AsyncWorker(env),
+        deferred_(Napi::Promise::Deferred::New(env)),
+        asyncFunction_(std::move(asyncFunction)),
+        valueWrapper_(std::move(valueWrapper)),
+        data_(data) {}
 
-    AsyncPromise(
-            const Napi::Promise::Deferred &deferred,
-            std::function<void(AsyncPromise<Args...> *)> &&asyncFunction,
-            std::function<Napi::Value(AsyncPromise<Args...> *, std::tuple<Args...>)> &&valueWrapper,
-            void *data = nullptr
-    ) :
-            Napi::AsyncWorker(deferred.Env()),
-            deferred_(deferred),
-            asyncFunction_(std::move(asyncFunction)),
-            valueWrapper_(std::move(valueWrapper)),
-            data_(data) {}
-
+    // Constructor with provided deferred object
     AsyncPromise(
             const Napi::Promise::Deferred &deferred,
-            std::function<void(AsyncPromise *)> &&asyncFunction,
+            std::function<void(AsyncPromise<Args...> *)> asyncFunction,
+            std::function<Napi::Value(const AsyncPromise<Args...> *, const std::tuple<Args...> &)> valueWrapper = UndefinedWrapper,
             void *data = nullptr
-    ) :
-            Napi::AsyncWorker(deferred.Env()), deferred_(deferred), asyncFunction_(std::move(asyncFunction)),
-            data_(data) {}
+    ) : Napi::AsyncWorker(deferred.Env()),
+        deferred_(deferred),
+        asyncFunction_(std::move(asyncFunction)),
+        valueWrapper_(std::move(valueWrapper)),
+        data_(data) {}
 
+    // Execute the async function with proper error handling
     void Execute() override {
         try {
             asyncFunction_(this);
@@ -97,44 +89,51 @@ public:
             SetError(e.Message());
         } catch (const std::exception &e) {
             SetError(e.what());
+        } catch (...) {
+            SetError("Unknown error occurred");
         }
     }
 
-    void Result(Args... args) {
-        val_ = std::make_tuple(std::forward<Args>(args)...);
+    // Set the result using perfect forwarding
+    template<typename... ResultArgs>
+    void Result(ResultArgs&&... args) {
+        val_ = std::make_tuple(std::forward<ResultArgs>(args)...);
     }
 
+    // Set error message
     void Error(const std::string &error) {
         SetError(error);
     }
 
+    // Callback when async work completes successfully
     void OnOK() override {
         Napi::HandleScope scope(Env());
-        deferred_.Resolve(this->valueWrapper_(this, val_));
+        deferred_.Resolve(valueWrapper_(this, val_));
     }
 
+    // Callback when async work fails
     void OnError(const Napi::Error &e) override {
         Napi::HandleScope scope(Env());
         deferred_.Reject(e.Value());
     }
 
-    void *data() {
-        return this->data_;
+    // Accessor for data pointer
+    void* data() const noexcept {
+        return data_;
     }
 
+    // Return promise and optionally queue the work
     Napi::Promise Promise(bool queue = true) {
-        if (queue) this->Queue();
+        if (queue) Queue();
         return deferred_.Promise();
     }
 
 private:
     Napi::Promise::Deferred deferred_;
     std::function<void(AsyncPromise *)> asyncFunction_;
-    std::function<Napi::Value(AsyncPromise *,
-                              std::tuple<Args...>)> valueWrapper_ = AsyncPromise::UndefinedWrapper;
+    std::function<Napi::Value(const AsyncPromise *, const std::tuple<Args...> &)> valueWrapper_;
     std::tuple<Args...> val_;
     void *data_;
 };
-
 
 #endif //NODE_LXC_PROMISEWORKER_H
