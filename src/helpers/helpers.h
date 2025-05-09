@@ -9,6 +9,9 @@
 #define opt_obj_val(key, getter, default) \
     (options.Has(key) ? options.Get(key).getter : default)
 
+#define opt_obj_val_str(key,getter, default) \
+    (options.Has(key) ? std::string(options.Get(key).getter) : std::string(default))
+
 
 #define opt_has_val_checked(key, checker) \
     (options.Has(key) && options.Get(key).checker)
