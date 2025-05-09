@@ -109,12 +109,6 @@ void Container::SetName(const Napi::CallbackInfo &info, const Napi::Value &value
                "Unable to rename container to " + value.ToString().Utf8Value())
 }
 
-/**
- * @brief Retrieves the current state of the container.
- *
- * @param info N-API callback context.
- * @return A string indicating the container state (e.g., "RUNNING", "STOPPED").
- */
 Napi::Value Container::GetState(const Napi::CallbackInfo &info) {
     assert(_container, "Invalid container pointer")
     return Napi::String::New(info.Env(), _container->state(_container));
@@ -210,17 +204,6 @@ Napi::Value Container::LoadConfig(const Napi::CallbackInfo &info) {
     return worker->Promise();
 }
 
-/**
- * @brief Starts the container.
- *
- * Optionally accepts an init flag and command arguments.
- *
- * @param info JavaScript arguments:
- *  - info[0] {Number} useinit (optional)
- *  - info[1] {Array<String>} argv (optional)
- *
- * @return A Promise that resolves when the container starts.
- */
 Napi::Value Container::Start(const Napi::CallbackInfo &info) {
     auto deferred = Napi::Promise::Deferred::New(info.Env());
     assert_deferred(_container, "Invalid container pointer")
@@ -1505,7 +1488,6 @@ Napi::Value Container::InitPIDFd(const Napi::CallbackInfo &info) {
             AsyncPromise<int>::NumberWrapper);
     return worker->Promise();
 }
-
 
 Napi::Value Container::DevptsFd(const Napi::CallbackInfo &info) {
     auto deferred = Napi::Promise::Deferred::New(info.Env());

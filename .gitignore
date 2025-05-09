@@ -15,4 +15,3 @@ containers/*
 /blob-report/
 /playwright/.cache/
 dist
-package
