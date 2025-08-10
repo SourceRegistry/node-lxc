@@ -1,6 +1,6 @@
 {
   "name": "@sourceregistry/node-lxc",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
   "url": "https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
   "author": "A.P.A. Slaa",
@@ -13,14 +13,14 @@
     "examples"
   ],
   "dependencies": {
-    "node-addon-api": "^8.3.1"
+    "node-addon-api": "^8.5.0"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.15.17",
     "cmake-js": "^7.3.1",
-    "mocha": "^11.2.2",
-    "node-gyp": "^11.2.0",
+    "mocha": "^11.7.1",
+    "node-gyp": "^11.3.0",
     "ts-node": "^10.9.2"
   },
   "scripts": {

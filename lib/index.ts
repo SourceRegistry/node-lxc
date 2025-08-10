@@ -519,7 +519,14 @@ export type LXC = {
 
 export const LXC: LXC = binding;
 
-export const Container = LXC.Container;
+export const {
+    GetVersion,
+    GetGlobalConfigItem,
+    ListAllContainers,
+    ListAllDefinedContainers,
+    ListAllActiveContainers,
+    Container,
+} = LXC
 
 export const Images = {
 
@@ -529,9 +536,9 @@ export const Images = {
             'image.json': "https://images.linuxcontainers.org/meta/simplestreams/v1/images.json",
             'index.json': "https://images.linuxcontainers.org/meta/simplestreams/v1/index.json",
         }
-    },
+    } as const,
 
-    async List(repository: keyof typeof Images.repositories = 'linuxcontainers'): Promise<Record<string, Image>>{
+    async List(repository: keyof typeof Images.repositories = 'linuxcontainers'): Promise<Record<string, Image>> {
         const imageURL = Images.repositories[repository]["image.json"];
         const response = await fetch(imageURL);
         if (!response.ok) throw new Error(`Failed to get image list from '${imageURL}'`, {cause: response});
@@ -542,8 +549,8 @@ export const Images = {
         if (!images.products || typeof images.products !== 'object') throw new Error("Unknown json: products is not defined or is not of type object");
         return images.products as Record<string, Image>;
     },
-    
-    async Available(repository: keyof typeof Images.repositories = 'linuxcontainers'): Promise<string[]>{
+
+    async Available(repository: keyof typeof Images.repositories = 'linuxcontainers'): Promise<string[]> {
         const indexURL = Images.repositories[repository]["index.json"];
         const response = await fetch(indexURL);
         if (!response.ok) throw new Error(`Failed to get image index list from '${indexURL}'`, {cause: response});
