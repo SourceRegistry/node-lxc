@@ -16,7 +16,7 @@ if (!is_package) {
     if (mode === "Debug") {
         console.warn("!!!RUNNING IN DEVELOPMENT MODE!!!");
     }
-    addonPath = path.join(__dirname, '..', 'build', mode, `${base_name}.node`);
+    addonPath = path.join(__dirname, '..','build', mode, `${base_name}.node`);
 } else {
     if (platform === 'linux' && arch === 'x64') {
         addonPath = path.join(__dirname, '..', 'bin', 'x86_64-linux-gnu', `${base_name}.node`);

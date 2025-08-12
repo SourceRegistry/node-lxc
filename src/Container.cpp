@@ -769,6 +769,7 @@ struct ConsoleSession {
     Napi::ObjectReference selfRef;
     uv_poll_t *pollHandle;
     bool tsfnInitialized;
+    bool cleaned = false;
 
     ConsoleSession(int tty, int ttyfd)
         : ptxfd(-1), ttynum(tty), ttyfd(ttyfd), running(false), pollHandle(nullptr), tsfnInitialized(false) {
@@ -779,12 +780,17 @@ struct ConsoleSession {
     }
 
     void cleanup() {
-        std::lock_guard<std::mutex> lock(closeMutex);
+        std::lock_guard lock(closeMutex);
+        std::cout << "ConsoleSession::cleanup() begin" << std::endl;
+        if (cleaned) return;
+        cleaned = true;
+
         running = false;
 
         if (pollHandle) {
             uv_poll_stop(pollHandle);
             uv_close((uv_handle_t *) pollHandle, [](uv_handle_t *handle) {
+                std::cout << "uv_close(pollHandle)" << std::endl;
                 delete (uv_poll_t *) handle;
             });
             pollHandle = nullptr;
@@ -796,6 +802,7 @@ struct ConsoleSession {
         }
 
         if (ptxfd >= 0) {
+            std::cout << "Closing ptxfd=" << ptxfd << ", ttyfd=" << ttyfd << std::endl;
             close(ptxfd);
             close(ttyfd);
             ptxfd = -1;
@@ -803,6 +810,7 @@ struct ConsoleSession {
         }
 
         selfRef.Reset();
+        std::cout << "ConsoleSession::cleanup() complete" << std::endl;
     }
 };
 
@@ -962,7 +970,7 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
             return e.Undefined();
         }
 
-        std::lock_guard<std::mutex> lock(session->closeMutex);
+        std::lock_guard lock(session->closeMutex);
         if (session->ptxfd < 0) {
             Napi::Error::New(e, "Console is closed").ThrowAsJavaScriptException();
             return e.Undefined();
@@ -997,12 +1005,17 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
         return cbInfo.Env().Undefined();
     }));
 
-
+    // === .resize(cols, rows) ===
     consoleObj.Set("resize", Napi::Function::New(env, [this, session](const Napi::CallbackInfo &info) -> Napi::Value {
         Napi::Env e = info.Env();
 
+        if (!session) {
+            Napi::Error::New(e, "Internal error: session is null").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
         if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsNumber()) {
-            Napi::TypeError::New(e, "resize(cols, rows)").ThrowAsJavaScriptException();
+            Napi::TypeError::New(e, "Usage: resize(cols, rows)").ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
@@ -1010,48 +1023,37 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
         int rows = info[1].ToNumber().Int32Value();
 
         std::lock_guard lock(session->closeMutex);
-        if (session->ptxfd < 0) {
+
+        if (!session->running || session->ptxfd < 0) {
             Napi::Error::New(e, "Console is closed").ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
-        winsize ws;
+        if (!_container->is_running(_container)) {
+            Napi::Error::New(e, "Container is not running").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        winsize ws{};
         ws.ws_row = rows;
         ws.ws_col = cols;
         ws.ws_xpixel = 0;
         ws.ws_ypixel = 0;
 
-        if (ioctl(session->ptxfd, TIOCSWINSZ, &ws) != -1) {
-            Napi::Error::New(e, std::string("TIOCSWINSZ failed: ") + strerror(errno))
-                    .ThrowAsJavaScriptException();
+        if (ioctl(session->ptxfd, TIOCSWINSZ, &ws) == -1) {
+            std::string err = "TIOCSWINSZ failed: " + std::string(strerror(errno));
+            Napi::Error::New(e, err).ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
-        // Optionally: send SIGWINCH to container's init process
-        if (_container->is_running(_container)) {
-            pid_t initPid = _container->init_pid(_container);
-            if (initPid > 0) {
-                kill(initPid, SIGWINCH);
-            }
+        // Send SIGWINCH to container init process
+        pid_t initPid = _container->init_pid(_container);
+        if (initPid > 0) {
+            kill(initPid, SIGWINCH);
         }
 
         return e.Undefined();
     }));
-    // === .end(data) ===
-    consoleObj.Set("end", Napi::Function::New(env, [session](const Napi::CallbackInfo &info) -> Napi::Value {
-        Napi::Env e = info.Env();
-
-        if (info.Length() > 0) {
-            auto writeFn = info.This().As<Napi::Object>().Get("write").As<Napi::Function>();
-            writeFn.Call(info.This(), {info[0]});
-        }
-
-        auto closeFn = info.This().As<Napi::Object>().Get("close").As<Napi::Function>();
-        closeFn.Call(info.This(), {});
-
-        return e.Undefined();
-    }));
-
     // Setup cleanup via object wrap pattern
     consoleObj.AddFinalizer([](Napi::Env, void *data) {
         auto *sess = static_cast<ConsoleSession *>(data);

@@ -6,7 +6,7 @@
 import {
     bdev_specs, lxc_attach_options, lxc_clone_options,
     lxc_console_log, LXC_CREATE, LXC_MIGRATE, LXC_MOUNT, lxc_mount, lxc_snapshot, migrate_opts,
-    Image,
+    Image, ConsoleSession,
 } from "./types";
 
 export * from "./types"
@@ -313,12 +313,7 @@ export type Container = {
      */
     consoleGetFds(ttynum?: number): Promise<[number, number]>
 
-    consoleAsync(ttynum: number): Promise<{
-        // @ts-ignore
-        on(event: 'data', listener: (chunk: Buffer) => void): this;
-        write(data: string | Buffer): void;
-        close(): void;
-    }>
+    consoleAsync(ttynum?: number): Promise<ConsoleSession>
     /**
      * Allocate and run a console tty.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#a5ef781838651c315c8cdc6730586a554)

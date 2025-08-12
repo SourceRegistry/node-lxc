@@ -18,3 +18,5 @@ export * from "./lxc_snapshot"
 export * from "./migrate_opts"
 export * from "./Personality"
 export * from "./Image"
+
+export * from "./custom"

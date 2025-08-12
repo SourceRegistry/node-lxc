@@ -1,47 +1,94 @@
 import {Container} from "../../lib";
-import {closeSync} from "node:fs";
 
-const name = "node-ct"
+const containerName = 'node-ct'; // Change to your container name
 
-/**
- * In this example, a container is created and the calling process stdio is attached.
- */
 async function main() {
-    const c = new Container(name);
-    c.setConfigItem('lxc.log.file', `./${name}/container.log`)
+    const container = new Container(containerName);
+    container.setConfigItem('lxc.log.file', `./${containerName}/container.log`)
 
-    if (c.defined && c.running) {
-        let session = await c.consoleAsync(0)
+
+    if (!container.defined || !container.running) {
+        console.error(`Container '${containerName}' is not defined or not running.`);
+        process.exit(1);
+    }
+
+    console.log(`📎 Attaching to console of container '${containerName}' (TTY 0)`);
+    console.log(`💡 Type commands, press Ctrl+C or Ctrl+D to exit.\n`);
+
+    try {
+        // Open console
+        const session = await container.consoleAsync(0);
+
+        // Ensure we're in raw mode
+        if (!process.stdin.isTTY) {
+            console.error('Stdin is not a TTY');
+            process.exit(1);
+        }
+
+        process.stdin.setRawMode(true);
+        process.stdin.setEncoding('utf8');
+
+        // Disable line buffering
+        process.stdin.resume();
+
+        // Handle data from container → stdout
         session.on('data', (chunk) => {
-            process.stdout.write(chunk)
-        })
+            process.stdout.write(chunk);
+        });
 
+        // Handle input from user → container
+        process.stdin.on('data', (data) => {
+            if (data.toString() === '\x03' || data.toString() === '\x04') {
+                // Ctrl+C or Ctrl+D
+                session.close();
+                process.exit(0);
+            } else {
+                session.write(data);
+            }
 
+        });
 
-        session.write("ls -la\r\n"); // send command
-        session.write("exit\r\n");
+        // Handle terminal resize
+        function handleResize() {
+            const cols = process.stdout.columns || 80;
+            const rows = process.stdout.rows || 24;
+            try {
+                session.resize(cols, rows);
+            } catch (e) {
+                // Ignore resize errors
+            }
+        }
 
-        await new Promise<void>((resolve) => setTimeout(() => resolve(), 5000));
-        session.close();
+        // Initial resize
+        handleResize();
 
+        // Watch for resize events
+        process.stdout.on('resize', handleResize);
 
-        session = await c.consoleAsync(0)
-        session.on('data', (chunk) => {
-            process.stdout.write(chunk)
-        })
+        // Optional: send SIGWINCH on SIGHUP, SIGTERM
+        process.on('SIGINT', () => session.close());
+        process.on('SIGTERM', () => session.close());
 
+        // Cleanup on exit
+        const cleanup = () => {
+            session.close();
+            process.stdin.setRawMode(false);
+            process.exit(0);
+        };
 
+        process.on('exit', cleanup);
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
 
-        session.write("ls -la\r\n"); // send command
-        session.write("exit\r\n");
-
-        await new Promise<void>((resolve) => setTimeout(() => resolve(), 5000));
-        session.close();
-
-
-    } else {
-        console.warn(`Container '${name}' not defined or not running`);
+        console.log('✅ Connected. You can now type inside the container.\n');
+    } catch (err) {
+        // @ts-ignore
+        console.error('❌ Console error:', err?.message || err);
+        process.exit(1);
     }
 }
 
-main().catch(console.error);
+main().catch(err => {
+    console.error('❌ Unexpected error:', err);
+    process.exit(1);
+});
