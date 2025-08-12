@@ -7,6 +7,7 @@
 #define NODE_LXC_CONTAINER_H
 
 #include <napi.h>
+#include <uv.h>
 #include <lxc/lxccontainer.h>
 #include <lxc/version.h>
 
@@ -18,8 +19,7 @@
 
 // region stuct defs
 #if !VERSION_AT_LEAST(4, 0, 9) && !defined(LXC_ATTACH_SETGROUPS)
-typedef struct lxc_groups_t
-{
+typedef struct lxc_groups_t {
     size_t size;
     gid_t *list;
 } lxc_groups_t;
@@ -110,7 +110,7 @@ private:
 
     Napi::Value Clone(const Napi::CallbackInfo &info);
 
-    Napi::Value ConsoleGetFds(const Napi::CallbackInfo &info);
+    Napi::Value ConsoleGetFd(const Napi::CallbackInfo &info);
 
     Napi::Value Snapshot(const Napi::CallbackInfo &info);
 
@@ -136,7 +136,7 @@ private:
 
     Napi::Value ConsoleLog(const Napi::CallbackInfo &info);
 
-//    Napi::Value Reboot2(const Napi::CallbackInfo &info);
+    //    Napi::Value Reboot2(const Napi::CallbackInfo &info);
     Napi::Value Mount(const Napi::CallbackInfo &info);
 
     Napi::Value Umount(const Napi::CallbackInfo &info);
@@ -156,6 +156,10 @@ private:
     Napi::Value Exec(const Napi::CallbackInfo &info);
 
     Napi::Value Console(const Napi::CallbackInfo &info);
+
+    //Custom Enhancements
+    Napi::Value ConsoleAsync(const Napi::CallbackInfo &info);
+
 
     lxc_container *_container;
 };

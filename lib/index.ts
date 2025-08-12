@@ -6,7 +6,7 @@
 import {
     bdev_specs, lxc_attach_options, lxc_clone_options,
     lxc_console_log, LXC_CREATE, LXC_MIGRATE, LXC_MOUNT, lxc_mount, lxc_snapshot, migrate_opts,
-    Image
+    Image,
 } from "./types";
 
 export * from "./types"
@@ -14,6 +14,7 @@ export * from "./types"
 import binding from "./binding"
 
 //region types
+
 export type ContainerState =
     "STOPPED"
     | "STARTING"
@@ -23,7 +24,6 @@ export type ContainerState =
     | "FREEZING"
     | "FROZEN"
     | "THAWED";
-
 
 export type Container = {
     /**
@@ -305,13 +305,20 @@ export type Container = {
      * Allocate a console tty for the container.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#a64b4ce75b807b21e42d4ccd024652973)
      * @param ttynum
-     * @returns {Promise<[number, number]>} [ttynum, ptxfd]
+     * @returns {Promise<[number, number]>} [ttyfd, ptxfd]
      * @note
      * On successful return, ttynum will contain the tty number that was allocated.
      * The returned file descriptor is used to keep the tty allocated.
-     * The caller should call close(2) on the returned file descriptor when no longer required so that it may be allocated by another caller.
+     * The caller should call close(ttyfd and ptxfd) on the returned file descriptor when no longer required so that it may be allocated by another caller.
      */
     consoleGetFds(ttynum?: number): Promise<[number, number]>
+
+    consoleAsync(ttynum: number): Promise<{
+        // @ts-ignore
+        on(event: 'data', listener: (chunk: Buffer) => void): this;
+        write(data: string | Buffer): void;
+        close(): void;
+    }>
     /**
      * Allocate and run a console tty.
      * @link [https://linuxcontainers.org/apidoc](https://linuxcontainers.org/lxc/apidoc/structlxc__container.html#a5ef781838651c315c8cdc6730586a554)

@@ -24,7 +24,8 @@ public:
         return worker->Env().Null();
     }
 
-    static Napi::String StdStringWrapper(const AsyncPromise<std::string> *worker, const std::tuple<std::string> &tuple) {
+    static Napi::String StdStringWrapper(const AsyncPromise<std::string> *worker,
+                                         const std::tuple<std::string> &tuple) {
         return Napi::String::New(worker->Env(), std::get<0>(tuple));
     }
 
@@ -44,9 +45,13 @@ public:
         return Napi::String::New(worker->Env(), std::get<0>(tuple));
     }
 
-    static Napi::String
-    SizeCharStringWrapper(const AsyncPromise<char *, size_t> *worker, const std::tuple<char *, size_t> &tuple) {
-        return Napi::String::New(worker->Env(), std::get<0>(tuple), std::get<1>(tuple));
+    static Napi::Value SizeCharStringWrapper(const AsyncPromise<char *, size_t> *worker,
+                                             const std::tuple<char *, size_t> &tuple) {
+        char *data = std::get<0>(tuple);
+        size_t len = std::get<1>(tuple);
+        Napi::Value result = Napi::String::New(worker->Env(), data, len);
+        free(data);
+        return result;
     }
 
     static Napi::Number NumberWrapper(const AsyncPromise *worker, const std::tuple<Args...> &tuple) {
@@ -59,27 +64,31 @@ public:
 
     // Constructor using perfect forwarding for std::function arguments
     AsyncPromise(
-            const Napi::Env &env,
-            std::function<void(AsyncPromise<Args...> *)> asyncFunction,
-            std::function<Napi::Value(const AsyncPromise<Args...> *, const std::tuple<Args...> &)> valueWrapper = UndefinedWrapper,
-            void *data = nullptr
+        const Napi::Env &env,
+        std::function<void(AsyncPromise<Args...> *)> asyncFunction,
+        std::function<Napi::Value(const AsyncPromise<Args...> *, const std::tuple<Args...> &)> valueWrapper =
+                UndefinedWrapper,
+        void *data = nullptr
     ) : Napi::AsyncWorker(env),
         deferred_(Napi::Promise::Deferred::New(env)),
         asyncFunction_(std::move(asyncFunction)),
         valueWrapper_(std::move(valueWrapper)),
-        data_(data) {}
+        data_(data) {
+    }
 
     // Constructor with provided deferred object
     AsyncPromise(
-            const Napi::Promise::Deferred &deferred,
-            std::function<void(AsyncPromise<Args...> *)> asyncFunction,
-            std::function<Napi::Value(const AsyncPromise<Args...> *, const std::tuple<Args...> &)> valueWrapper = UndefinedWrapper,
-            void *data = nullptr
+        const Napi::Promise::Deferred &deferred,
+        std::function<void(AsyncPromise<Args...> *)> asyncFunction,
+        std::function<Napi::Value(const AsyncPromise<Args...> *, const std::tuple<Args...> &)> valueWrapper =
+                UndefinedWrapper,
+        void *data = nullptr
     ) : Napi::AsyncWorker(deferred.Env()),
         deferred_(deferred),
         asyncFunction_(std::move(asyncFunction)),
         valueWrapper_(std::move(valueWrapper)),
-        data_(data) {}
+        data_(data) {
+    }
 
     // Execute the async function with proper error handling
     void Execute() override {
@@ -96,7 +105,7 @@ public:
 
     // Set the result using perfect forwarding
     template<typename... ResultArgs>
-    void Result(ResultArgs&&... args) {
+    void Result(ResultArgs &&... args) {
         val_ = std::make_tuple(std::forward<ResultArgs>(args)...);
     }
 
@@ -118,7 +127,7 @@ public:
     }
 
     // Accessor for data pointer
-    void* data() const noexcept {
+    void *data() const noexcept {
         return data_;
     }
 

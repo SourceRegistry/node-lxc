@@ -5,8 +5,15 @@
 
 #include "Container.h"
 
+#include <fcntl.h>
+#include <atomic>
+
 #include <sys/wait.h>
 #include <sstream>
+#include <iostream>
+#include <sys/ioctl.h>
+#include <syslimits.h>
+
 #include "./helpers/Array.h"
 #include "./helpers/helpers.h"
 #include "./helpers/AsyncPromise.h"
@@ -52,7 +59,7 @@ Napi::Object Container::Init(Napi::Env env, Napi::Object exports) {
                             InstanceMethod("getCGroupItem", &Container::GetCGroupItem),
                             InstanceMethod("setCGroupItem", &Container::SetCGroupItem),
                             InstanceMethod("clone", &Container::Clone),
-                            InstanceMethod("consoleGetFds", &Container::ConsoleGetFds),
+                            InstanceMethod("consoleGetFds", &Container::ConsoleGetFd),
                             InstanceMethod("console", &Container::Console),
 
                             InstanceMethod("attach", &Container::Attach), // WITH run_wait
@@ -80,6 +87,11 @@ Napi::Object Container::Init(Napi::Env env, Napi::Object exports) {
                             InstanceMethod("devptsFd", &Container::DevptsFd),
 
                             InstanceMethod("exec", &Container::Exec),
+
+
+                            //Custom Enhancements
+                            InstanceMethod("consoleAsync", &Container::ConsoleAsync),
+
                         });
 
     auto *constructor = new Napi::FunctionReference();
@@ -395,7 +407,8 @@ Napi::Value Container::Create(const Napi::CallbackInfo &info) {
                 .rbd{
                     .rbdname = const_cast<char *>(bdev_spec_rbd_rbdname.empty()
                                                       ? nullptr
-                                                      : bdev_spec_lvm_vg.c_str()),
+                                                      : bdev_spec_rbd_rbdname.c_str()),
+
                     .rbdpool = const_cast<char *>(bdev_spec_rbd_rbdpool.empty()
                                                       ? nullptr
                                                       : bdev_spec_rbd_rbdpool.c_str()),
@@ -463,41 +476,37 @@ Napi::Value Container::Destroy(const Napi::CallbackInfo &info) {
     auto worker = new AsyncPromise<>(
         deferred,
         [this, force, include_snapshots](AsyncPromise<> *worker) {
-            // TODO: Check if container has snapshots
+            char buf[256];
+            auto ret = _container->get_config_item(_container, "lxc.ephemeral", buf, sizeof(buf));
+            bool is_ephemeral = (ret > 0 && strcmp(buf, "1") == 0);
 
-            if (_container->is_running(_container)) {
+            if (is_ephemeral && _container->is_running(_container)) {
                 if (!force) {
-                    worker->Error(std::string(_container->name) + " is running");
+                    worker->Error("Cannot destroy running ephemeral container without force");
                     return;
                 }
-                /* If the container was ephemeral, it will be removed on shutdown. */
                 if (!_container->stop(_container)) {
-                    worker->Error("Failed to stop " + std::string(_container->name));
+                    worker->Error("Failed to stop ephemeral container");
                     return;
                 }
+                // Ephemeral containers auto-remove on stop
+                _container = nullptr;
+                return;
             }
-            /* If the container was ephemeral we have already removed it when we stopped it. */
+
+            // Only destroy if not ephemeral
             if (_container->is_defined(_container)) {
-                char buf[256];
-                auto ret = _container->get_config_item(_container, "lxc.ephemeral", buf, 256);
-                if (ret > 0 && strcmp(buf, "0") == 0) {
-                    if (include_snapshots) {
-                        if (!_container->destroy_with_snapshots(_container))
-                        // TODO: THIS DOESN'T WORK YET MAYBE BECAUSE CONTAINER HAS NO SNAPSHOT???
-                        {
-                            worker->Error("Destroying " + std::string(_container->name) + " failed");
-                            return;
-                        }
-                        _container = nullptr;
-                    } else {
-                        if (!_container->destroy(_container)) {
-                            worker->Error("Destroying " + std::string(_container->name) + " failed");
-                            return;
-                        }
-                        _container = nullptr;
+                if (include_snapshots) {
+                    if (!_container->destroy_with_snapshots(_container)) {
+                        worker->Error("Destroy failed with snapshots");
+                        return;
+                    }
+                } else {
+                    if (!_container->destroy(_container)) {
+                        worker->Error("Destroy failed");
+                        return;
                     }
                 }
-            } else {
                 _container = nullptr;
             }
         });
@@ -527,24 +536,14 @@ Napi::Value Container::Save(const Napi::CallbackInfo &info) {
 Napi::Value Container::GetConfigItem(const Napi::CallbackInfo &info) {
     assert(_container, "Invalid container pointer")
     check(info.Length() <= 0 || !info[0].IsString(), "Invalid arguments")
-
-    char *value;
-
     int len = _container->get_config_item(_container, info[0].ToString().Utf8Value().c_str(), nullptr, 0);
-    if (len <= 0) {
+    if (len <= 0) return info.Env().Null();
+
+    std::unique_ptr<char[]> value(new char[len + 1]);
+    if (_container->get_config_item(_container, info[0].ToString().Utf8Value().c_str(), value.get(), len + 1) != len) {
         return info.Env().Null();
     }
-
-again:
-    value = (char *) malloc(sizeof(char) * len + 1);
-    if (value == nullptr)
-        goto again;
-
-    if (_container->get_config_item(_container, info[0].ToString().Utf8Value().c_str(), value, len + 1) != len) {
-        free(value);
-        return info.Env().Null();
-    }
-    return Napi::String::New(info.Env(), value);
+    return Napi::String::New(info.Env(), value.get());
 }
 
 Napi::Value Container::GetRunningConfigItem(const Napi::CallbackInfo &info) {
@@ -726,7 +725,7 @@ Napi::Value Container::Clone(const Napi::CallbackInfo &info) {
     return worker->Promise();
 }
 
-Napi::Value Container::ConsoleGetFds(const Napi::CallbackInfo &info) {
+Napi::Value Container::ConsoleGetFd(const Napi::CallbackInfo &info) {
     auto deferred = Napi::Promise::Deferred::New(info.Env());
     assert_deferred(_container, "Invalid container point")
     int _ttynum = info[0].IsNumber() ? info[0].ToNumber().Int32Value() : -1;
@@ -740,12 +739,12 @@ Napi::Value Container::ConsoleGetFds(const Napi::CallbackInfo &info) {
             }
             int ttynum = _ttynum;
             int ptxfd;
-            ttynum = _container->console_getfd(_container, &ttynum, &ptxfd);
-            if (ttynum < 0) {
+            auto ttyfd = _container->console_getfd(_container, &ttynum, &ptxfd);
+            if (ttyfd < 0) {
                 worker->Error("Unable to allocate console tty");
                 return;
             }
-            worker->Result(ttynum, ptxfd);
+            worker->Result(ttyfd, ptxfd);
         },
         std::function<Napi::Value(const AsyncPromise<int, int> *, const std::tuple<int, int> &)>{
             [](const AsyncPromise<int, int> *worker, const std::tuple<int, int> &tuple) {
@@ -759,6 +758,308 @@ Napi::Value Container::ConsoleGetFds(const Napi::CallbackInfo &info) {
 
 
     return worker->Promise();
+}
+
+struct ConsoleSession {
+    int ptxfd;
+    int ttynum, ttyfd;
+    std::atomic<bool> running;
+    std::mutex closeMutex;
+    Napi::ThreadSafeFunction tsfn;
+    Napi::ObjectReference selfRef;
+    uv_poll_t *pollHandle;
+    bool tsfnInitialized;
+
+    ConsoleSession(int tty, int ttyfd)
+        : ptxfd(-1), ttynum(tty), ttyfd(ttyfd), running(false), pollHandle(nullptr), tsfnInitialized(false) {
+    }
+
+    ~ConsoleSession() {
+        cleanup();
+    }
+
+    void cleanup() {
+        std::lock_guard<std::mutex> lock(closeMutex);
+        running = false;
+
+        if (pollHandle) {
+            uv_poll_stop(pollHandle);
+            uv_close((uv_handle_t *) pollHandle, [](uv_handle_t *handle) {
+                delete (uv_poll_t *) handle;
+            });
+            pollHandle = nullptr;
+        }
+
+        if (tsfnInitialized) {
+            tsfn.Release();
+            tsfnInitialized = false;
+        }
+
+        if (ptxfd >= 0) {
+            close(ptxfd);
+            close(ttyfd);
+            ptxfd = -1;
+            ttyfd = -1;
+        }
+
+        selfRef.Reset();
+    }
+};
+
+Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
+    Napi::Env env = info.Env();
+
+    if (!_container) {
+        Napi::TypeError::New(env, "Invalid container").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (!info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Expected TTY number").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    int ttynum = info[0].ToNumber().Int32Value();
+
+    // Check if container is running
+    if (!_container->is_running(_container)) {
+        Napi::Error::New(env, "Container is not running").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Allocate console TTY
+    int ptxfd_out;
+    int ttyfd = _container->console_getfd(_container, &ttynum, &ptxfd_out);
+    if (ttyfd < 0) {
+        Napi::Error::New(env, "Failed to allocate console TTY").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Make ptx non-blocking
+    if (fcntl(ptxfd_out, F_SETFL, O_NONBLOCK) < 0) {
+        close(ptxfd_out);
+        Napi::Error::New(env, "Failed to set non-blocking mode").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Create console session (raw pointer for manual management)
+    auto *session = new ConsoleSession(ttynum, ttyfd);
+    session->ptxfd = ptxfd_out;
+
+    // Create console object
+    Napi::Object consoleObj = Napi::Object::New(env);
+    session->selfRef = Napi::ObjectReference::New(consoleObj, 1);
+
+    // Store session pointer in object's internal field
+    consoleObj.DefineProperty(Napi::PropertyDescriptor::Value("_session",
+                                                              Napi::External<ConsoleSession>::New(env, session)));
+
+    // === .on('data', callback) ===
+    consoleObj.Set("on", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
+        Napi::Env e = cbInfo.Env();
+
+        if (cbInfo.Length() != 2 || !cbInfo[0].IsString() || !cbInfo[1].IsFunction()) {
+            Napi::TypeError::New(e, "Usage: on('data', callback)").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        std::string event = cbInfo[0].ToString().Utf8Value();
+        if (event != "data") {
+            Napi::TypeError::New(e, "Only 'data' event is supported").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        std::lock_guard<std::mutex> lock(session->closeMutex);
+        if (session->running) {
+            Napi::Error::New(e, "Data listener already registered").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        Napi::Function callback = cbInfo[1].As<Napi::Function>();
+
+        // Create ThreadSafeFunction
+        session->tsfn = Napi::ThreadSafeFunction::New(
+            e, callback, "ConsoleData", 0, 1
+        );
+        session->tsfnInitialized = true;
+
+        // Setup UV poll for non-blocking I/O
+        session->pollHandle = new uv_poll_t;
+        session->pollHandle->data = session;
+
+        uv_loop_t *loop = uv_default_loop();
+        int result = uv_poll_init(loop, session->pollHandle, session->ptxfd);
+        if (result < 0) {
+            delete session->pollHandle;
+            session->pollHandle = nullptr;
+            session->tsfnInitialized = false;
+            Napi::Error::New(e, "Failed to initialize UV poll").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        // Start polling for readable events
+        result = uv_poll_start(session->pollHandle, UV_READABLE,
+                               [](uv_poll_t *handle, int status, int events) {
+                                   auto *sess = static_cast<ConsoleSession *>(handle->data);
+
+                                   if (status < 0 || !sess->running) {
+                                       return;
+                                   }
+
+                                   if (events & UV_READABLE) {
+                                       uint8_t buffer[4096];
+                                       ssize_t n = read(sess->ptxfd, buffer, sizeof(buffer));
+
+                                       if (n > 0) {
+                                           auto *data = new std::vector<uint8_t>(buffer, buffer + n);
+
+                                           napi_status stat = sess->tsfn.NonBlockingCall(data,
+                                               [](Napi::Env env, Napi::Function jsCallback, std::vector<uint8_t> *vec) {
+                                                   try {
+                                                       Napi::Buffer<uint8_t> buf = Napi::Buffer<uint8_t>::New(
+                                                           env, vec->data(), vec->size()
+                                                       );
+                                                       jsCallback.Call({buf});
+                                                   } catch (...) {
+                                                       // Ignore callback errors to prevent crashes
+                                                   }
+                                                   delete vec;
+                                               }
+                                           );
+
+                                           if (stat != napi_ok) {
+                                               sess->running = false;
+                                           }
+                                       } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                                           // Real error occurred
+                                           sess->running = false;
+                                       }
+                                       // n == 0 or EAGAIN/EWOULDBLOCK: just continue polling
+                                   }
+                               }
+        );
+
+        if (result < 0) {
+            uv_close((uv_handle_t *) session->pollHandle, [](uv_handle_t *handle) {
+                delete (uv_poll_t *) handle;
+            });
+            session->pollHandle = nullptr;
+            session->tsfnInitialized = false;
+            Napi::Error::New(e, "Failed to start UV polling").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        session->running = true;
+        return cbInfo.This();
+    }));
+
+    // === .write(data) ===
+    consoleObj.Set("write", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
+        Napi::Env e = cbInfo.Env();
+
+        if (cbInfo.Length() < 1) {
+            Napi::TypeError::New(e, "Expected data to write").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        std::lock_guard<std::mutex> lock(session->closeMutex);
+        if (session->ptxfd < 0) {
+            Napi::Error::New(e, "Console is closed").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        Napi::Value arg = cbInfo[0];
+        std::vector<uint8_t> data;
+
+        if (arg.IsString()) {
+            std::string str = arg.ToString().Utf8Value();
+            data.assign(str.begin(), str.end());
+        } else if (arg.IsBuffer()) {
+            Napi::Buffer<uint8_t> buf = arg.As<Napi::Buffer<uint8_t> >();
+            data.assign(buf.Data(), buf.Data() + buf.Length());
+        } else {
+            Napi::TypeError::New(e, "write() expects string or buffer").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        ssize_t n = write(session->ptxfd, data.data(), data.size());
+        if (n < 0) {
+            std::string err = "Write failed: " + std::string(strerror(errno));
+            Napi::Error::New(e, err).ThrowAsJavaScriptException();
+        }
+
+        return e.Undefined();
+    }));
+
+    // === .close() ===
+    consoleObj.Set("close", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
+        session->cleanup();
+        return cbInfo.Env().Undefined();
+    }));
+
+
+    consoleObj.Set("resize", Napi::Function::New(env, [this, session](const Napi::CallbackInfo &info) -> Napi::Value {
+        Napi::Env e = info.Env();
+
+        if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsNumber()) {
+            Napi::TypeError::New(e, "resize(cols, rows)").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        int cols = info[0].ToNumber().Int32Value();
+        int rows = info[1].ToNumber().Int32Value();
+
+        std::lock_guard lock(session->closeMutex);
+        if (session->ptxfd < 0) {
+            Napi::Error::New(e, "Console is closed").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        winsize ws;
+        ws.ws_row = rows;
+        ws.ws_col = cols;
+        ws.ws_xpixel = 0;
+        ws.ws_ypixel = 0;
+
+        if (ioctl(session->ptxfd, TIOCSWINSZ, &ws) != -1) {
+            Napi::Error::New(e, std::string("TIOCSWINSZ failed: ") + strerror(errno))
+                    .ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
+        // Optionally: send SIGWINCH to container's init process
+        if (_container->is_running(_container)) {
+            pid_t initPid = _container->init_pid(_container);
+            if (initPid > 0) {
+                kill(initPid, SIGWINCH);
+            }
+        }
+
+        return e.Undefined();
+    }));
+    // === .end(data) ===
+    consoleObj.Set("end", Napi::Function::New(env, [session](const Napi::CallbackInfo &info) -> Napi::Value {
+        Napi::Env e = info.Env();
+
+        if (info.Length() > 0) {
+            auto writeFn = info.This().As<Napi::Object>().Get("write").As<Napi::Function>();
+            writeFn.Call(info.This(), {info[0]});
+        }
+
+        auto closeFn = info.This().As<Napi::Object>().Get("close").As<Napi::Function>();
+        closeFn.Call(info.This(), {});
+
+        return e.Undefined();
+    }));
+
+    // Setup cleanup via object wrap pattern
+    consoleObj.AddFinalizer([](Napi::Env, void *data) {
+        auto *sess = static_cast<ConsoleSession *>(data);
+        sess->cleanup();
+        delete sess;
+    }, session);
+
+    return consoleObj;
 }
 
 void Container::SetConfigItem(const Napi::CallbackInfo &info) {
@@ -1019,7 +1320,6 @@ Napi::Value Container::Console(const Napi::CallbackInfo &info) {
     auto _stdout = info[1].As<Napi::Array>().Get((uint32_t) 1).ToNumber().Int32Value();
     auto _stderr = info[1].As<Napi::Array>().Get((uint32_t) 2).ToNumber().Int32Value();
     auto escape = info[2].ToNumber().Int32Value();
-
     auto worker = new AsyncPromise<int>(
         deferred,
         [this, ttynum, _stdin, _stdout, _stderr, escape](AsyncPromise<int> *worker) {
@@ -1189,19 +1489,16 @@ Napi::Value Container::AddDeviceNode(const Napi::CallbackInfo &info) {
     auto src_path = info[0].ToString().Utf8Value();
     auto dest_path = info[1].IsString() ? info[1].ToString().Utf8Value() : "";
 
-    auto worker = new AsyncPromise<lxc_snapshot *, int>(
+    auto worker = new AsyncPromise<>(
         deferred,
-        [this, src_path, dest_path](AsyncPromise<lxc_snapshot *, int> *worker) {
+        [this, src_path, dest_path](AsyncPromise<> *worker) {
             if (!_container->may_control(_container)) {
-                worker->Error("Insufficient privileges to control " + std::string(_container->name));
+                worker->Error("Insufficient privileges...");
                 return;
             }
             if (!_container->add_device_node(_container, src_path.c_str(),
                                              dest_path.empty() ? nullptr : dest_path.c_str())) {
-                worker->Error("Unable to add device node " + src_path + ":" +
-                              (dest_path.empty() ? src_path : dest_path) + " to " +
-                              std::string(_container->name));
-                return;
+                worker->Error("Unable to add device node...");
             }
         });
     return worker->Promise();
@@ -1214,9 +1511,9 @@ Napi::Value Container::RemoveDeviceNode(const Napi::CallbackInfo &info) {
     auto src_path = info[0].ToString().Utf8Value();
     auto dest_path = info[1].IsString() ? info[1].ToString().Utf8Value() : "";
 
-    auto worker = new AsyncPromise<lxc_snapshot *, int>(
+    auto worker = new AsyncPromise<>(
         deferred,
-        [this, src_path, dest_path](AsyncPromise<lxc_snapshot *, int> *worker) {
+        [this, src_path, dest_path](AsyncPromise<> *worker) {
             if (!_container->may_control(_container)) {
                 worker->Error("Insufficient privileges to control " + std::string(_container->name));
                 return;
@@ -1226,7 +1523,6 @@ Napi::Value Container::RemoveDeviceNode(const Napi::CallbackInfo &info) {
                 worker->Error("Unable to remove device node " + src_path + ":" +
                               (dest_path.empty() ? src_path : dest_path) + " from " +
                               std::string(_container->name));
-                return;
             }
         });
     return worker->Promise();
@@ -1239,9 +1535,9 @@ Napi::Value Container::AttachInterface(const Napi::CallbackInfo &info) {
     auto dev = info[0].ToString().Utf8Value();
     auto dst_dev = info[1].IsString() ? info[1].ToString().Utf8Value() : dev;
 
-    auto worker = new AsyncPromise<lxc_snapshot *, int>(
+    auto worker = new AsyncPromise<>(
         deferred,
-        [this, dev, dst_dev](AsyncPromise<lxc_snapshot *, int> *worker) {
+        [this, dev, dst_dev](AsyncPromise<> *worker) {
             if (!_container->attach_interface(_container, dev.c_str(), dst_dev.c_str())) {
                 worker->Error("Unable to attach interface " + dev + ":" + dst_dev + " to " +
                               std::string(_container->name));
@@ -1258,13 +1554,11 @@ Napi::Value Container::DetachInterface(const Napi::CallbackInfo &info) {
     auto dev = info[0].ToString().Utf8Value();
     auto dst_dev = info[1].IsString() ? info[1].ToString().Utf8Value() : dev;
 
-    auto worker = new AsyncPromise<lxc_snapshot *, int>(
+    auto worker = new AsyncPromise<>(
         deferred,
-        [this, dev, dst_dev](AsyncPromise<lxc_snapshot *, int> *worker) {
-            if (!_container->attach_interface(_container, dev.c_str(), dst_dev.c_str())) {
-                worker->Error("Unable to detach interface " + dev + ":" + dst_dev + " to " +
-                              std::string(_container->name));
-                return;
+        [this, dev, dst_dev](AsyncPromise<> *worker) {
+            if (!_container->detach_interface(_container, dev.c_str(), dst_dev.c_str())) {
+                worker->Error("Unable to detach interface " + dev + " from " + std::string(_container->name));
             }
         });
     return worker->Promise();
@@ -1333,7 +1627,6 @@ Napi::Value Container::Migrate(const Napi::CallbackInfo &info) {
     opts->verbose = opt_obj_val("verbose", ToBoolean(), false);
     opts->stop = opt_obj_val("stop", ToBoolean(), false);
     opts->predump_dir = opt_obj_val("predump_dir", ToString().Utf8Value().data(), nullptr);
-    opts->predump_dir = opt_obj_val("predump_dir", ToString().Utf8Value().data(), nullptr);
     opts->pageserver_address = opt_obj_val("pageserver_address", ToString().Utf8Value().data(), nullptr);
     opts->pageserver_port = opt_obj_val("pageserver_port", ToString().Utf8Value().data(), nullptr);
     opts->preserves_inodes = opt_obj_val("preserves_inodes", ToBoolean(), false);
@@ -1369,7 +1662,7 @@ Napi::Value Container::ConsoleLog(const Napi::CallbackInfo &info) {
 
     uint64_t _read_max = (uint64_t) opt_obj_val("read_max", ToNumber().Int64Value(), 0);
 
-    struct lxc_console_log log
+    lxc_console_log log
     {
         .clear = opt_obj_val("clear", ToBoolean(), false),
         .read = opt_obj_val("read", ToBoolean(), false),
@@ -1387,7 +1680,6 @@ Napi::Value Container::ConsoleLog(const Napi::CallbackInfo &info) {
             auto ret = _container->console_log(_container, &log);
             if (ret < 0) {
                 worker->Error(std::string(strerror(-ret)) + "- Failed to retrieve console log");
-                return;
             } else {
                 worker->Result(log.data, *log.read_max);
             }
@@ -1402,14 +1694,14 @@ Napi::Value Container::Mount(const Napi::CallbackInfo &info) {
     check_deferred(info.Length() <= 0 ||
                    !info[0].IsString() || // source
                    !info[1].IsString() || // target
-                   //                   !info[2].IsString() || // filesystemtype
+                   !(info[2].IsString() || info[2].IsNull() || info[2].IsUndefined()) || // filesystemtype
                    !(info[3].IsBigInt() | info[3].IsNumber()) || // mountflags
                    !info[4].IsObject(), // lxc_mount
                    "Invalid arguments")
 
     auto source = info[0].ToString().Utf8Value();
     auto target = info[1].ToString().Utf8Value();
-    auto filesystemtype = info[2].ToString().Utf8Value();
+    auto filesystemtype = info[2].IsString() ? info[2].ToString().Utf8Value() : "";
     auto mountflags = info[3].IsBigInt()
                           ? info[3].As<Napi::BigInt>().Uint64Value(nullptr)
                           : (uint64_t) info[3].ToNumber().Int64Value();
@@ -1426,12 +1718,11 @@ Napi::Value Container::Mount(const Napi::CallbackInfo &info) {
                 worker->Error("Insufficient privileges to control " + std::string(_container->name));
                 return;
             }
+            const char *fs_type = filesystemtype.empty() ? nullptr : filesystemtype.c_str();
             auto ret = _container->mount(_container, source.c_str(), target.c_str(),
-                                         filesystemtype.empty() ? filesystemtype.c_str() : nullptr, mountflags,
-                                         nullptr, &mnt); //TODO: Throws Segmentation fault
+                                         fs_type, mountflags, nullptr, &mnt);
             if (ret < 0) {
                 worker->Error(std::string("Failed to mount Error: ") + strerror(ret));
-                //TODO: Throws Segmentation fault
             }
         });
     return worker->Promise();
@@ -1441,19 +1732,17 @@ Napi::Value Container::Umount(const Napi::CallbackInfo &info) {
     auto deferred = Napi::Promise::Deferred::New(info.Env());
     assert_deferred(_container, "Invalid container pointer")
     check_deferred(info.Length() <= 0 ||
-                   !info[0].IsString() || // source
-                   !(info[1].IsBigInt() | info[1].IsNumber()) || // mountflags
+                   !info[0].IsString() || // target
+                   !(info[1].IsBigInt() || info[1].IsNumber()) || // mountflags
                    !info[2].IsObject(), // lxc_mount
                    "Invalid arguments")
 
-    auto target = info[1].ToString().Utf8Value();
-    auto mountflags = info[3].IsBigInt()
-                          ? info[3].As<Napi::BigInt>().Uint64Value(nullptr)
-                          : (uint64_t) info[3].ToNumber().Int64Value();
-
-    struct lxc_mount mnt
-    {
-        .version = info[4].ToObject().Get("version").ToNumber().Int32Value()
+    auto target = info[0].ToString().Utf8Value();
+    auto mountflags = info[1].IsBigInt()
+                          ? info[1].As<Napi::BigInt>().Uint64Value(nullptr)
+                          : (uint64_t) info[1].ToNumber().Int64Value();
+    lxc_mount mnt{
+        .version = info[2].ToObject().Get("version").ToNumber().Int32Value()
     };
 
     auto worker = new AsyncPromise<>(
@@ -1531,9 +1820,9 @@ Napi::Value Container::DevptsFd(const Napi::CallbackInfo &info) {
     auto worker = new AsyncPromise<int>(
         deferred,
         [this](AsyncPromise<int> *worker) {
-            auto ret = _container->init_pidfd(_container);
+            auto ret = _container->devpts_fd(_container);
             if (ret < 0) {
-                worker->Error("Failed to retrieve a mount fd for the container's devpts instance");
+                worker->Error("Failed to retrieve devpts fd");
                 return;
             }
             worker->Result(ret);
