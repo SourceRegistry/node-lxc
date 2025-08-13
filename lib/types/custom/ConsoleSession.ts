@@ -4,9 +4,9 @@
 export interface ConsoleSession {
     /**
      * Register an event listener.
-     * Only 'data' is supported.
+     * Only 'data' and 'close' is supported and one listener of each can be registered.
      */
-    on(event: 'data', listener: (chunk: Buffer) => void): this;
+    on(event: 'data' | 'close', listener: (chunk: Buffer) => void): this;
 
     /**
      * Write data to the console (e.g., commands).

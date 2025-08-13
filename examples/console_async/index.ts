@@ -36,10 +36,15 @@ async function main() {
             process.stdout.write(chunk);
         });
 
+        session.on('close', () => {
+            process.stdout.write("Container closed session");
+            process.exit(0);
+        })
+
         // Handle input from user → container
         process.stdin.on('data', (data) => {
-            if (data.toString() === '\x03' || data.toString() === '\x04') {
-                // Ctrl+C or Ctrl+D
+            if (data.toString() === '\x04') {
+                // Ctrl+D
                 session.close();
                 process.exit(0);
             } else {
