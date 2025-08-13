@@ -7,6 +7,7 @@
 
 #include <fcntl.h>
 #include <atomic>
+#include <iostream>
 
 #include <sys/wait.h>
 #include <sstream>
@@ -1135,6 +1136,8 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
     // === .close() ===
     consoleObj.Set("close", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
         session->cleanup();
+        std::cout << "Called close" << std::endl;
+
         delete session; // Safe: only deleted here
         return cbInfo.Env().Undefined();
     }));
@@ -1182,6 +1185,7 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
     // 🔥 Finalizer: Called when JS object is GC'd
     consoleObj.AddFinalizer([](Napi::Env, ConsoleSession *s) {
         if (s) {
+            std::cout << "Called finalizer" << std::endl;
             // Prevent further TSFN calls
             s->tsfnInitialized = false;
             s->closeTsfnInitialized = false;
