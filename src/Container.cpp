@@ -7,7 +7,6 @@
 
 #include <fcntl.h>
 #include <atomic>
-#include <iostream>
 
 #include <sys/wait.h>
 #include <sstream>
@@ -1136,7 +1135,6 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
     // === .close() ===
     consoleObj.Set("close", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
         session->cleanup();
-        std::cout << "Called close" << std::endl;
         return cbInfo.Env().Undefined();
     }));
 
@@ -1183,7 +1181,6 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
     // 🔥 Finalizer: Called when JS object is GC'd — ONLY PLACE THAT DELETES
     consoleObj.AddFinalizer([](Napi::Env, ConsoleSession *s) {
         if (s) {
-            std::cout << "Called finalizer" << std::endl;
             s->cleanup();   // Idempotent: safe if already closed
             delete s;       // Only deletion point
         }
