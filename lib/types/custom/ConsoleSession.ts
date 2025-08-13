@@ -22,4 +22,6 @@ export interface ConsoleSession {
      * Close the console session and release the TTY.
      */
     close(): void;
+
+    get closed(): boolean
 }
