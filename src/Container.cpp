@@ -10,7 +10,6 @@
 
 #include <sys/wait.h>
 #include <sstream>
-// #include <iostream>
 #include <sys/ioctl.h>
 #include <syslimits.h>
 
@@ -762,70 +761,59 @@ Napi::Value Container::ConsoleGetFd(const Napi::CallbackInfo &info) {
 
 struct ConsoleSession {
     int ptxfd = -1;
-    int ttynum = -1, ttyfd = -1;
+    int ttynum = -1;
+    int ttyfd = -1;
     std::atomic<bool> running{false};
     std::mutex closeMutex;
-    Napi::ThreadSafeFunction tsfn;
-    Napi::ThreadSafeFunction closeTsfn;
-    bool tsfnInitialized = false;
-    bool closeTsfnInitialized = false;
-    Napi::ObjectReference selfRef;
-    uv_poll_t *pollHandle = nullptr;
-    uv_timer_t *timerHandle = nullptr;
-    Napi::ObjectReference *containerJsRef = nullptr; // JS-level ref to prevent GC
-    void *containerNativeHandle = nullptr; // e.g., _container pointer for validity
-    std::atomic<bool> cleaned = false;
+    bool cleaned = false;
     bool closeEmitted = false;
 
-    ConsoleSession(Napi::ObjectReference &containerRef, void *nativeHandle, int tty, int fd)
-        : ttynum(tty), ttyfd(fd), containerNativeHandle(nativeHandle) {
-        // Create strong persistent reference to parent Container JS object
-        this->containerJsRef = new Napi::ObjectReference(Napi::ObjectReference::New(containerRef.Value(), 1));
+    // N-API
+    Napi::ThreadSafeFunction tsfn;
+    Napi::ThreadSafeFunction closeTsfn;
+    std::atomic<bool> tsfnInitialized{false};
+    std::atomic<bool> closeTsfnInitialized{false};
+    Napi::ObjectReference selfRef;
+    Napi::ObjectReference *containerJsRef = nullptr;
+
+    // libuv handles
+    uv_poll_t *pollHandle = nullptr;
+    std::atomic<bool> stopRequested{false};
+    pid_t initPid;
+
+    ConsoleSession(Napi::ObjectReference &containerRef, const pid_t pid, int tty, int fd)
+        : ttynum(tty), ttyfd(fd), initPid(pid) {
+        if (!containerRef.IsEmpty()) {
+            containerJsRef = new Napi::ObjectReference(Napi::ObjectReference::New(containerRef.Value(), 1));
+        }
     }
 
     ~ConsoleSession() {
         cleanup();
     }
 
-    void emitClose() {
-        std::lock_guard<std::mutex> lock(closeMutex);
-        if (closeEmitted || !closeTsfnInitialized) return;
-        closeEmitted = true;
-
-        napi_status status = closeTsfn.NonBlockingCall(static_cast<void *>(nullptr),
-                                                       [](Napi::Env env, Napi::Function jsCallback, void *) {
-                                                           jsCallback.Call({});
-                                                       }
-        );
-
-        // Always release — even if call fails
-        closeTsfn.Release();
-        closeTsfnInitialized = false;
-    }
-
     void cleanup() {
-        bool expected = false;
-        if (!cleaned.compare_exchange_strong(expected, true)) {
-            return; // Already cleaning
+        std::lock_guard<std::mutex> lock(closeMutex);
+        if (cleaned) return;
+
+        // Emit close BEFORE cleaning up if we haven't already
+        if (closeTsfnInitialized && !closeEmitted) {
+            emitClose();
         }
 
+        cleaned = true;
         running = false;
+        stopRequested = true;
 
-        // Stop UV handles (safe to call multiple times)
+        // Stop polling
         if (pollHandle) {
             uv_poll_stop(pollHandle);
-            uv_close((uv_handle_t *) pollHandle, [](uv_handle_t *h) {
-                delete (uv_poll_t *) h;
+            uv_close((uv_handle_t *) pollHandle, [](uv_handle_t *handle) {
+                if (handle) {
+                    delete reinterpret_cast<uv_poll_t *>(handle);
+                }
             });
             pollHandle = nullptr;
-        }
-
-        if (timerHandle) {
-            uv_timer_stop(timerHandle);
-            uv_close((uv_handle_t *) timerHandle, [](uv_handle_t *h) {
-                delete (uv_timer_t *) h;
-            });
-            timerHandle = nullptr;
         }
 
         // Release TSFNs
@@ -835,21 +823,53 @@ struct ConsoleSession {
         }
 
         if (closeTsfnInitialized) {
-            emitClose(); // Will release closeTsfn
+            closeTsfn.Release();
+            closeTsfnInitialized = false;
         }
 
-        // Close file descriptors
-        if (ptxfd >= 0) close(ptxfd);
-        if (ttyfd >= 0 && ttyfd != ptxfd) close(ttyfd);
-        ptxfd = -1;
+        // Close file descriptors safely
+        if (ptxfd >= 0) {
+            close(ptxfd);
+            ptxfd = -1;
+        }
+        if (ttyfd >= 0 && ttyfd != ptxfd) {
+            close(ttyfd);
+        }
         ttyfd = -1;
 
         // Release JS references
-        selfRef.Reset();
+        if (!selfRef.IsEmpty()) {
+            selfRef.Reset();
+        }
         if (containerJsRef) {
-            containerJsRef->Reset();
+            if (!containerJsRef->IsEmpty()) {
+                containerJsRef->Reset();
+            }
             delete containerJsRef;
             containerJsRef = nullptr;
+        }
+    }
+
+private:
+    void emitClose() {
+        if (closeEmitted || !closeTsfnInitialized) return;
+        closeEmitted = true;
+
+        // Use BlockingCall to ensure it executes
+        auto status = closeTsfn.BlockingCall([](Napi::Env env, Napi::Function jsCallback) {
+            try {
+                if (!jsCallback.IsUndefined() && jsCallback.IsFunction()) {
+                    jsCallback.Call({});
+                }
+            } catch (const std::exception &e) {
+                // Error handling without cout - could log to proper logging system
+                // or handle gracefully based on application needs
+            }
+        });
+
+        // Handle potential TSFN call failure
+        if (status != napi_ok) {
+            // Could implement proper error handling here
         }
     }
 };
@@ -862,47 +882,70 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
         return env.Undefined();
     }
 
-    if (!info[0].IsNumber()) {
+    if (info.Length() < 1 || !info[0].IsNumber()) {
         Napi::TypeError::New(env, "Expected TTY number").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
     int ttynum = info[0].ToNumber().Int32Value();
 
-    // Check if container is running
     if (!_container->is_running(_container)) {
         Napi::Error::New(env, "Container is not running").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    int ptxfd_out;
+    // Allocate console TTY
+    int ptxfd_out = -1;
     int ttyfd = _container->console_getfd(_container, &ttynum, &ptxfd_out);
-    if (ttyfd < 0) {
+    if (ttyfd < 0 || ptxfd_out < 0) {
+        if (ptxfd_out >= 0) ::close(ptxfd_out);
+        if (ttyfd >= 0) ::close(ttyfd);
         Napi::Error::New(env, "Failed to allocate console TTY").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
+    // Make ptx non-blocking
     if (fcntl(ptxfd_out, F_SETFL, O_NONBLOCK) < 0) {
-        close(ptxfd_out);
-        close(ttyfd);
+        ::close(ptxfd_out);
+        ::close(ttyfd);
         Napi::Error::New(env, "Failed to set non-blocking mode").ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    // Create session with JS-level container reference
+    // Get init PID
+    pid_t initPid = _container->init_pid(_container);
+    if (initPid <= 0) {
+        ::close(ptxfd_out);
+        ::close(ttyfd);
+        Napi::Error::New(env, "Failed to get container init PID").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Create session
     Napi::Object thisObj = info.This().As<Napi::Object>();
-    Napi::ObjectReference containerRef = Napi::ObjectReference::New(thisObj, 1);
+    Napi::ObjectReference containerRef = Napi::Persistent(thisObj);
 
-    auto *session = new ConsoleSession(containerRef, _container, ttynum, ttyfd);
-    session->ptxfd = ptxfd_out;
+    ConsoleSession *session = nullptr;
+    try {
+        session = new ConsoleSession(containerRef, initPid, ttynum, ttyfd);
+        session->ptxfd = ptxfd_out;
+    } catch (const std::exception &e) {
+        ::close(ptxfd_out);
+        ::close(ttyfd);
+        delete session;
+        Napi::Error::New(env, "Failed to create console session").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
 
+    // Create JS console object
     Napi::Object consoleObj = Napi::Object::New(env);
-    session->selfRef = Napi::ObjectReference::New(consoleObj, 1);
+    session->selfRef = Napi::Persistent(consoleObj);
 
     consoleObj.DefineProperty(Napi::PropertyDescriptor::Value(
         "_session",
         Napi::External<ConsoleSession>::New(env, session)
     ));
+
     // === .on(event, callback) ===
     consoleObj.Set("on", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
         Napi::Env e = cbInfo.Env();
@@ -915,59 +958,85 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
         std::string event = cbInfo[0].ToString().Utf8Value();
         Napi::Function callback = cbInfo[1].As<Napi::Function>();
 
-        std::lock_guard<std::mutex> lock(session->closeMutex);
+        std::lock_guard lock(session->closeMutex);
 
         if (event == "data") {
-            if (session->running) {
+            if (session->running.load() || session->tsfnInitialized) {
                 Napi::Error::New(e, "Data listener already registered").ThrowAsJavaScriptException();
                 return e.Undefined();
             }
 
-            session->tsfn = Napi::ThreadSafeFunction::New(e, callback, "ConsoleData", 0, 1);
-            session->tsfnInitialized = true;
+            if (session->cleaned) {
+                Napi::Error::New(e, "Console session is closed").ThrowAsJavaScriptException();
+                return e.Undefined();
+            }
 
-            // Setup UV poll
+
+            try {
+                session->tsfn = Napi::ThreadSafeFunction::New(
+                    e, callback, "ConsoleData", 0, 1,
+                    [](Napi::Env) {
+                    }
+                );
+                session->tsfnInitialized = true;
+            } catch (const Napi::Error &err) {
+                Napi::Error::New(e, "Failed to create ThreadSafeFunction for 'data'").ThrowAsJavaScriptException();
+                return e.Undefined();
+            }
+
+            // Setup uv_poll - allocate handle
             session->pollHandle = new uv_poll_t;
             session->pollHandle->data = session;
 
             uv_loop_t *loop = uv_default_loop();
             int result = uv_poll_init(loop, session->pollHandle, session->ptxfd);
             if (result < 0) {
-                delete session->pollHandle;
-                session->pollHandle = nullptr;
                 session->tsfn.Release();
                 session->tsfnInitialized = false;
-                Napi::Error::New(e, "Failed to initialize UV poll").ThrowAsJavaScriptException();
+                delete session->pollHandle;
+                session->pollHandle = nullptr;
+                Napi::Error::New(e, "Failed to initialize UV poll handle").ThrowAsJavaScriptException();
                 return e.Undefined();
             }
 
             result = uv_poll_start(session->pollHandle, UV_READABLE,
                                    [](uv_poll_t *handle, int status, int events) {
-                                       auto *sess = static_cast<ConsoleSession *>(handle->data);
-                                       if (status < 0 || !sess->running) return;
+                                       ConsoleSession *sess = static_cast<ConsoleSession *>(handle->data);
+                                       if (!sess || status < 0 || !sess->running.load() || sess->stopRequested.load()) {
+                                           return;
+                                       }
 
                                        if (events & UV_READABLE) {
                                            uint8_t buffer[4096];
                                            ssize_t n = read(sess->ptxfd, buffer, sizeof(buffer));
 
                                            if (n > 0) {
-                                               auto *vec = new std::vector<uint8_t>(buffer, buffer + n);
-                                               napi_status stat = sess->tsfn.NonBlockingCall(vec,
+                                               auto data = new std::vector<uint8_t>(buffer, buffer + n);
+                                               napi_status stat = sess->tsfn.NonBlockingCall(data,
                                                    [](Napi::Env env, Napi::Function jsCallback,
-                                                      std::vector<uint8_t> *data) {
+                                                      std::vector<uint8_t> *vec) {
+                                                       if (!vec) return;
                                                        try {
-                                                           Napi::Buffer<uint8_t> buf = Napi::Buffer<uint8_t>::New(
-                                                               env, data->data(), data->size());
-                                                           jsCallback.Call({buf});
-                                                       } catch (...) {
+                                                           if (!jsCallback.IsUndefined() && jsCallback.IsFunction()) {
+                                                               auto buf = Napi::Buffer<uint8_t>::New(
+                                                                   env, vec->data(), vec->size());
+                                                               jsCallback.Call({buf});
+                                                           }
+                                                       } catch (const std::exception &) {
+                                                           // Handle silently
                                                        }
-                                                       delete data;
+                                                       delete vec;
                                                    }
                                                );
+
                                                if (stat != napi_ok) {
                                                    sess->cleanup();
                                                }
+                                           } else if (n == 0) {
+                                               // EOF - connection closed
+                                               sess->cleanup();
                                            } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                                               // Real error occurred
                                                sess->cleanup();
                                            }
                                        }
@@ -975,30 +1044,44 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
             );
 
             if (result < 0) {
-                uv_close((uv_handle_t *) session->pollHandle, [](uv_handle_t *h) { delete (uv_poll_t *) h; });
+                uv_close(reinterpret_cast<uv_handle_t *>(session->pollHandle), [](uv_handle_t *h) {
+                    delete reinterpret_cast<uv_poll_t *>(h);
+                });
                 session->pollHandle = nullptr;
                 session->tsfn.Release();
                 session->tsfnInitialized = false;
-                Napi::Error::New(e, "Failed to start UV polling").ThrowAsJavaScriptException();
+                Napi::Error::New(e, "Failed to start polling").ThrowAsJavaScriptException();
                 return e.Undefined();
             }
 
             session->running = true;
             return cbInfo.This();
-        } else if (event == "close") {
+        }
+
+        if (event == "close") {
             if (session->closeTsfnInitialized) {
                 Napi::Error::New(e, "Close listener already registered").ThrowAsJavaScriptException();
                 return e.Undefined();
             }
 
-            session->closeTsfn = Napi::ThreadSafeFunction::New(e, callback, "ConsoleClose", 0, 1);
-            session->closeTsfnInitialized = true;
+            if (session->cleaned) {
+                Napi::Error::New(e, "Console session is closed").ThrowAsJavaScriptException();
+                return e.Undefined();
+            }
+
+            try {
+                session->closeTsfn = Napi::ThreadSafeFunction::New(e, callback, "ConsoleClose", 0, 1);
+                session->closeTsfnInitialized = true;
+            } catch (const Napi::Error &err) {
+                Napi::Error::New(e, "Failed to create ThreadSafeFunction for 'close'").ThrowAsJavaScriptException();
+                return e.Undefined();
+            }
 
             return cbInfo.This();
-        } else {
-            Napi::TypeError::New(e, "Only 'data' and 'close' events are supported").ThrowAsJavaScriptException();
-            return e.Undefined();
         }
+
+        Napi::TypeError::New(e, "Only 'data' and 'close' events are supported").ThrowAsJavaScriptException();
+        return e.Undefined();
     }));
 
     // === .write(data) ===
@@ -1011,13 +1094,13 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
         }
 
         std::lock_guard<std::mutex> lock(session->closeMutex);
-        if (session->ptxfd < 0) {
+        if (session->ptxfd < 0 || session->cleaned) {
             Napi::Error::New(e, "Console is closed").ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
-        Napi::Value arg = cbInfo[0];
         std::vector<uint8_t> data;
+        Napi::Value arg = cbInfo[0];
 
         if (arg.IsString()) {
             std::string str = arg.ToString().Utf8Value();
@@ -1030,10 +1113,28 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
             return e.Undefined();
         }
 
-        ssize_t n = write(session->ptxfd, data.data(), data.size());
-        if (n < 0) {
-            std::string err = "Write failed: " + std::string(strerror(errno));
-            Napi::Error::New(e, err).ThrowAsJavaScriptException();
+        if (data.empty()) {
+            return e.Undefined(); // Nothing to write
+        }
+
+        ssize_t written = 0;
+        size_t remaining = data.size();
+        const uint8_t *ptr = data.data();
+
+        while (remaining > 0) {
+            ssize_t n = write(session->ptxfd, ptr + written, remaining);
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // Would block, could implement retry logic here
+                    break;
+                } else {
+                    std::string err = "Write failed: " + std::string(strerror(errno));
+                    Napi::Error::New(e, err).ThrowAsJavaScriptException();
+                    return e.Undefined();
+                }
+            }
+            written += n;
+            remaining -= n;
         }
 
         return e.Undefined();
@@ -1041,12 +1142,14 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
 
     // === .close() ===
     consoleObj.Set("close", Napi::Function::New(env, [session](const Napi::CallbackInfo &cbInfo) -> Napi::Value {
-        session->cleanup();
+        if (session) {
+            session->cleanup();
+        }
         return cbInfo.Env().Undefined();
     }));
 
     // === .resize(cols, rows) ===
-    consoleObj.Set("resize", Napi::Function::New(env, [this, session](const Napi::CallbackInfo &info) -> Napi::Value {
+    consoleObj.Set("resize", Napi::Function::New(env, [session, this](const Napi::CallbackInfo &info) -> Napi::Value {
         Napi::Env e = info.Env();
 
         if (info.Length() < 2 || !info[0].IsNumber() || !info[1].IsNumber()) {
@@ -1057,69 +1160,44 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
         int cols = info[0].ToNumber().Int32Value();
         int rows = info[1].ToNumber().Int32Value();
 
+        if (cols <= 0 || rows <= 0) {
+            Napi::TypeError::New(e, "Columns and rows must be positive").ThrowAsJavaScriptException();
+            return e.Undefined();
+        }
+
         std::lock_guard<std::mutex> lock(session->closeMutex);
-        if (!session->running || session->ptxfd < 0) {
+        if (!session->running.load() || session->ptxfd < 0 || session->cleaned) {
             Napi::Error::New(e, "Console is closed").ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
-        if (!_container->is_running(_container)) {
-            Napi::Error::New(e, "Container is not running").ThrowAsJavaScriptException();
-            return e.Undefined();
-        }
+        struct winsize ws = {};
+        ws.ws_row = static_cast<unsigned short>(rows);
+        ws.ws_col = static_cast<unsigned short>(cols);
 
-        winsize ws{};
-        ws.ws_row = rows;
-        ws.ws_col = cols;
         if (ioctl(session->ptxfd, TIOCSWINSZ, &ws) == -1) {
             std::string err = "TIOCSWINSZ failed: " + std::string(strerror(errno));
             Napi::Error::New(e, err).ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
-        pid_t initPid = _container->init_pid(_container);
-        if (initPid > 0) {
-            kill(initPid, SIGWINCH);
+        // Send SIGWINCH to container init process
+        if (_container) {
+            pid_t initPid = _container->init_pid(_container);
+            if (initPid > 0) {
+                kill(initPid, SIGWINCH);
+            }
         }
 
         return e.Undefined();
     }));
 
-    // === Timer callback – now checks native handle ===
-    session->timerHandle = new uv_timer_t;
-    uv_timer_init(uv_default_loop(), session->timerHandle);
-    session->timerHandle->data = session;
-
-    uv_timer_start(session->timerHandle, [](uv_timer_t* handle) {
-        ConsoleSession* sess = static_cast<ConsoleSession*>(handle->data);
-
-        // Only proceed if session is still valid
-        if (!sess->containerNativeHandle) {
-            sess->cleanup();
-            return;
+    // Finalizer: ensure cleanup and delete
+    consoleObj.AddFinalizer([](Napi::Env, ConsoleSession *s) {
+        if (s) {
+            s->cleanup();
+            delete s;
         }
-
-        // Cast to your container struct type (e.g., lxc_container *)
-        auto* c = static_cast<lxc_container*>(sess->containerNativeHandle);
-
-        // Check if container is still running
-        if (!c || !c->is_running(c)) {
-            uv_timer_stop(handle);
-            uv_close((uv_handle_t*)handle, [](uv_handle_t* h) { delete (uv_timer_t*)h; });
-            sess->timerHandle = nullptr;
-
-            std::lock_guard<std::mutex> lock(sess->closeMutex);
-            if (sess->running) {
-                sess->running = false;
-                sess->cleanup();  // Safe: checks cleaned
-            }
-        }
-    }, 1000, 1000);
-
-    // === Finalizer ===
-    consoleObj.AddFinalizer([](Napi::Env, ConsoleSession* s) {
-        s->cleanup();
-        delete s;
     }, session);
 
     return consoleObj;

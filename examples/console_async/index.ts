@@ -16,6 +16,9 @@ async function main() {
     console.log(`💡 Type commands, press Ctrl+C or Ctrl+D to exit.\n`);
 
     try {
+
+        // console.log(container.initPIDFd())
+
         // Open console
         const session = await container.consoleAsync(0);
 
@@ -37,7 +40,6 @@ async function main() {
         });
 
         session.on('close', () => {
-            process.stdout.write("Container closed session");
             process.exit(0);
         })
 
