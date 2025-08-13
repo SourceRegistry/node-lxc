@@ -877,13 +877,13 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
             return e.Undefined();
         }
 
-        std::lock_guard<std::mutex> lock(session->closeMutex);
+        std::lock_guard lock(session->closeMutex);
         if (session->running) {
             Napi::Error::New(e, "Data listener already registered").ThrowAsJavaScriptException();
             return e.Undefined();
         }
 
-        Napi::Function callback = cbInfo[1].As<Napi::Function>();
+        auto callback = cbInfo[1].As<Napi::Function>();
 
         // Create ThreadSafeFunction
         session->tsfn = Napi::ThreadSafeFunction::New(
@@ -919,7 +919,7 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
                                        ssize_t n = read(sess->ptxfd, buffer, sizeof(buffer));
 
                                        if (n > 0) {
-                                           auto *data = new std::vector<uint8_t>(buffer, buffer + n);
+                                           auto *data = new std::vector(buffer, buffer + n);
 
                                            napi_status stat = sess->tsfn.NonBlockingCall(data,
                                                [](Napi::Env env, Napi::Function jsCallback, std::vector<uint8_t> *vec) {
