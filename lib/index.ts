@@ -309,7 +309,7 @@ export type Container = {
      * @note
      * On successful return, ttynum will contain the tty number that was allocated.
      * The returned file descriptor is used to keep the tty allocated.
-     * The caller should call close(ttyfd and ptxfd) on the returned file descriptor when no longer required so that it may be allocated by another caller.
+     * The caller should call close(ttyfd **and** ptxfd) on the returned file descriptor when no longer required so that it may be allocated by another caller.
      */
     consoleGetFds(ttynum?: number): Promise<[number, number]>
 

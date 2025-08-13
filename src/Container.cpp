@@ -10,7 +10,7 @@
 
 #include <sys/wait.h>
 #include <sstream>
-#include <iostream>
+// #include <iostream>
 #include <sys/ioctl.h>
 #include <syslimits.h>
 
@@ -781,7 +781,7 @@ struct ConsoleSession {
 
     void cleanup() {
         std::lock_guard lock(closeMutex);
-        std::cout << "ConsoleSession::cleanup() begin" << std::endl;
+        // std::cout << "ConsoleSession::cleanup() begin" << std::endl;
         if (cleaned) return;
         cleaned = true;
 
@@ -790,7 +790,7 @@ struct ConsoleSession {
         if (pollHandle) {
             uv_poll_stop(pollHandle);
             uv_close((uv_handle_t *) pollHandle, [](uv_handle_t *handle) {
-                std::cout << "uv_close(pollHandle)" << std::endl;
+                // std::cout << "uv_close(pollHandle)" << std::endl;
                 delete (uv_poll_t *) handle;
             });
             pollHandle = nullptr;
@@ -802,7 +802,7 @@ struct ConsoleSession {
         }
 
         if (ptxfd >= 0) {
-            std::cout << "Closing ptxfd=" << ptxfd << ", ttyfd=" << ttyfd << std::endl;
+            // std::cout << "Closing ptxfd=" << ptxfd << ", ttyfd=" << ttyfd << std::endl;
             close(ptxfd);
             close(ttyfd);
             ptxfd = -1;
@@ -810,7 +810,7 @@ struct ConsoleSession {
         }
 
         selfRef.Reset();
-        std::cout << "ConsoleSession::cleanup() complete" << std::endl;
+        // std::cout << "ConsoleSession::cleanup() complete" << std::endl;
     }
 };
 
