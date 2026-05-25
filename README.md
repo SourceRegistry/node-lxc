@@ -3,7 +3,7 @@
 > Node.js native bindings for [LXC](https://linuxcontainers.org/lxc/) (Linux Containers) — a complete, production-ready wrapper around `liblxc` built with N-API.
 
 [![npm version](https://img.shields.io/npm/v/node-lxc.svg)](https://www.npmjs.com/package/node-lxc)
-[![license](https://img.shields.io/npm/l/node-lxc.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js ≥ 12](https://img.shields.io/badge/node-%3E%3D12-brightgreen.svg)](https://nodejs.org)
 [![Platform: Linux](https://img.shields.io/badge/platform-linux-blue.svg)](https://linuxcontainers.org)
 
@@ -319,7 +319,7 @@ Please ensure:
 
 ## License
 
-[MIT](LICENSE) © A.P.A. Slaa — [ProjectSource V.O.F.](https://projectsource.nl)
+[Apache 2.0](LICENSE) © 2026 [ProjectSource V.O.F.](https://projectsource.nl)
 
 ## See Also
 

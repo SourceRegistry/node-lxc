@@ -20,8 +20,8 @@
     "napi",
     "node-addon-api"
   ],
-  "author": "A.P.A. Slaa <alexanderslaa2000@gmail.com>",
-  "license": "MIT",
+  "author": "ProjectSource V.O.F.",
+  "license": "Apache-2.0",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
@@ -45,7 +45,8 @@
     "mocha": "^11.7.1",
     "node-gyp": "^11.3.0",
     "semantic-release": "^25.0.3",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typedoc": "^0.28.19"
   },
   "scripts": {
     "setup": "./scripts/setup/setup.sh",
