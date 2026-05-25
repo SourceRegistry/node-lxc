@@ -1,3 +1,14 @@
+## [1.0.1](https://github.com/SourceRegistry/node-lxc/compare/v1.0.0...v1.0.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **cmake:** include all headers and fix include paths for CLion ([78a4d9f](https://github.com/SourceRegistry/node-lxc/commit/78a4d9f433c0933b2bb6e58a2706bf60c88655d2))
+* **cmake:** quote NODE_ADDON_API_DIR in string(REGEX REPLACE) to avoid empty-variable error ([f458203](https://github.com/SourceRegistry/node-lxc/commit/f4582034326c2a4cac59bc828f82367938d410c2))
+* **cmake:** resolve napi.h and uv.h without depending on node being on PATH ([e036113](https://github.com/SourceRegistry/node-lxc/commit/e03611340e203dcfef8a03fb3cc1442edbbbd588))
+* **docs:** trigger for release ([ee1d3ca](https://github.com/SourceRegistry/node-lxc/commit/ee1d3ca925fc0e640c11e3a1ce37c370ed3d7187))
+* remove gypfile to stop npm install auto-triggering node-gyp rebuild ([7e31eb6](https://github.com/SourceRegistry/node-lxc/commit/7e31eb6f0ecfdf5bb383174b931127b3337116a5))
+
 # 1.0.0 (2026-05-25)
 
 
