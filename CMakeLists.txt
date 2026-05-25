@@ -33,7 +33,7 @@ execute_process(
     OUTPUT_VARIABLE NODE_ADDON_API_DIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
-string(REGEX REPLACE "\"" "" NODE_ADDON_API_DIR ${NODE_ADDON_API_DIR})
+string(REGEX REPLACE "\"" "" NODE_ADDON_API_DIR "${NODE_ADDON_API_DIR}")
 target_include_directories(${PROJECT_NAME} PRIVATE "${NODE_ADDON_API_DIR}")
 
 # cmake-js provided includes and lib (only set when building via cmake-js)
