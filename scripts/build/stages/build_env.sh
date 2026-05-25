@@ -27,4 +27,4 @@ step "   🎛️  Upgrading system"          $SUDO apt upgrade -y
 step "   📚  Installing g++ cmake"      $SUDO apt install g++ cmake -y
 step "   🗳️  Installing lxc lxc-dev"   $SUDO apt install lxc lxc-dev -y
 step "   📦  Installing npm deps"       npm install
-step "   🔩  Configuring node-gyp"      bash -c "node-gyp clean && node-gyp configure"
+step "   🔩  Configuring node-gyp"      bash -c "npx node-gyp clean && npx node-gyp configure"

@@ -14,7 +14,7 @@ step() {
 }
 
 printf "🧩 C/C++ addon\n"
-step "   🏗️  Building C/C++ bindings"         node-gyp build
+step "   🏗️  Building C/C++ bindings"         npx node-gyp build
 step "   ➡️  Staging x86_64-linux-gnu binary"  bash -c "
   mkdir -p ./package/bin/x86_64-linux-gnu &&
   cp build/Release/node-lxc.node ./package/bin/x86_64-linux-gnu/node-lxc.node

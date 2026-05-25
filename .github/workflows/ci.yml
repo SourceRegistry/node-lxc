@@ -34,7 +34,7 @@ jobs:
         run: npm install
 
       - name: Configure and build native addon
-        run: node-gyp configure && node-gyp build
+        run: npx node-gyp configure && npx node-gyp build
 
       - name: Compile TypeScript
         run: npx tsc --build

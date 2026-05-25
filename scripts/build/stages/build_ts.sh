@@ -14,5 +14,5 @@ step() {
 }
 
 printf "🔨 TypeScript\n"
-step "   🔨  Compiling"    tsc --build
+step "   🔨  Compiling"    npx tsc --build
 step "   ➡️  Staging lib"  bash -c "mkdir -p ./package/lib && cp -r build/tsc/* ./package/lib"
