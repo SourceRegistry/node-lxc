@@ -16,3 +16,4 @@ containers/*
 /playwright/.cache/
 dist
 package
+generated

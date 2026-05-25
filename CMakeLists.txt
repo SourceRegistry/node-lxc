@@ -15,28 +15,58 @@ set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 # Own src/ directory — resolves #include "Container.h" and #include "helpers/..."
 target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/src")
 
-# Node.js headers — derive from whichever node is on PATH
+# ── node-addon-api ─────────────────────────────────────────────────────────────
+# Always lives in the project's own node_modules — no PATH dependency.
+set(NODE_ADDON_API_DIR "${CMAKE_SOURCE_DIR}/node_modules/node-addon-api")
+if(NOT EXISTS "${NODE_ADDON_API_DIR}/napi.h")
+    # Fallback: ask node (works in shell-launched cmake)
+    execute_process(
+        COMMAND node -p "require('node-addon-api').include"
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE _naa_out
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    string(REGEX REPLACE "\"" "" NODE_ADDON_API_DIR "${_naa_out}")
+endif()
+target_include_directories(${PROJECT_NAME} PRIVATE "${NODE_ADDON_API_DIR}")
+
+# ── Node.js headers (node_api.h, uv.h, …) ─────────────────────────────────────
+# Strategy 1: derive from the node binary on PATH
 execute_process(
     COMMAND node -e "process.stdout.write(process.execPath)"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE NODE_EXECUTABLE
+    OUTPUT_VARIABLE _node_exe
     OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
 )
-get_filename_component(NODE_BIN_DIR  "${NODE_EXECUTABLE}" DIRECTORY)
-get_filename_component(NODE_ROOT     "${NODE_BIN_DIR}"    DIRECTORY)
-target_include_directories(${PROJECT_NAME} PRIVATE "${NODE_ROOT}/include/node")
+if(_node_exe)
+    get_filename_component(_node_bin "${_node_exe}" DIRECTORY)
+    get_filename_component(_node_root "${_node_bin}" DIRECTORY)
+    list(APPEND _node_include_hints "${_node_root}/include/node")
+endif()
 
-# node-addon-api headers
-execute_process(
-    COMMAND node -p "require('node-addon-api').include"
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE NODE_ADDON_API_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+# Strategy 2: glob the node-gyp header cache (works even when node is not on PATH)
+file(GLOB _node_gyp_dirs
+    "$ENV{HOME}/.node-gyp/*/include/node"
+    "/.jbdevcontainer/node-gyp/*/include/node"
 )
-string(REGEX REPLACE "\"" "" NODE_ADDON_API_DIR "${NODE_ADDON_API_DIR}")
-target_include_directories(${PROJECT_NAME} PRIVATE "${NODE_ADDON_API_DIR}")
+list(APPEND _node_include_hints ${_node_gyp_dirs})
 
-# cmake-js provided includes and lib (only set when building via cmake-js)
+find_path(NODE_INCLUDE_DIR
+    NAMES node_api.h uv.h
+    HINTS ${_node_include_hints}
+    PATHS /usr/include/node /usr/local/include/node
+    NO_DEFAULT_PATH
+)
+
+if(NODE_INCLUDE_DIR)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${NODE_INCLUDE_DIR}")
+else()
+    message(WARNING "Node.js headers not found. Run 'npx node-gyp configure' once to populate the cache.")
+endif()
+
+# ── cmake-js (only set when building via cmake-js) ────────────────────────────
 if(CMAKE_JS_INC)
     target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_JS_INC})
 endif()
@@ -44,7 +74,7 @@ if(CMAKE_JS_LIB)
     target_link_libraries(${PROJECT_NAME} ${CMAKE_JS_LIB})
 endif()
 
-# LXC headers and library
+# ── LXC ───────────────────────────────────────────────────────────────────────
 find_path(LXC_INCLUDE_DIR
     NAMES lxc/lxccontainer.h
     PATHS /usr/include /usr/local/include
@@ -74,5 +104,5 @@ if(LXC_INCLUDE_DIR)
     endif()
 endif()
 
-# NAPI version
+# ── Compile definitions ───────────────────────────────────────────────────────
 target_compile_definitions(${PROJECT_NAME} PRIVATE NAPI_VERSION=9)
