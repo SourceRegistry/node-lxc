@@ -1,0 +1,38 @@
+name: Coverage
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  coverage:
+    name: Collect and upload coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install system dependencies
+        run: sudo apt-get update -y && sudo apt-get install -y g++ cmake lxc lxc-dev
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native addon and TypeScript
+        run: node-gyp configure && node-gyp build && npx tsc --build
+
+      - name: Run tests with coverage
+        run: node --require ts-node/register --test --experimental-test-coverage tests/index.ts
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

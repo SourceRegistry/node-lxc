@@ -157,6 +157,14 @@ private:
 
     Napi::Value Console(const Napi::CallbackInfo &info);
 
+    Napi::Value SetTimeout(const Napi::CallbackInfo &info);
+
+    Napi::Value MayControl(const Napi::CallbackInfo &info);
+
+    Napi::Value GetConfigItems(const Napi::CallbackInfo &info);
+
+    Napi::Value Stats(const Napi::CallbackInfo &info);
+
     //Custom Enhancements
     Napi::Value ConsoleAsync(const Napi::CallbackInfo &info);
 

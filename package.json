@@ -1,9 +1,26 @@
 {
-  "name": "@sourceregistry/node-lxc",
-  "version": "0.0.16",
-  "description": "NodeJS LXC (linux container) bindings using N-API (node-addon-api)",
-  "url": "https://gitlab.projectsource.nl/sourceregistry/bindings/node-lxc",
-  "author": "A.P.A. Slaa",
+  "name": "node-lxc",
+  "version": "1.0.0",
+  "description": "Node.js native bindings for LXC (Linux Containers) — a complete, production-ready wrapper around liblxc built with N-API",
+  "homepage": "https://github.com/SourceRegistry/node-lxc#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SourceRegistry/node-lxc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SourceRegistry/node-lxc/issues"
+  },
+  "keywords": [
+    "lxc",
+    "linux-containers",
+    "containers",
+    "virtualization",
+    "liblxc",
+    "native",
+    "napi",
+    "node-addon-api"
+  ],
+  "author": "A.P.A. Slaa <alexanderslaa2000@gmail.com>",
   "license": "MIT",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -25,10 +42,11 @@
   },
   "scripts": {
     "setup": "./scripts/setup/setup.sh",
-    "test": "echo \"Error: no test specified\" && exit 0",
-    "tests": "ts-node tests/index.ts",
+    "test": "node --require ts-node/register --test tests/index.ts",
+    "test:watch": "node --require ts-node/register --test --watch tests/index.ts",
     "test:build": "npm run build && npm run test",
     "rebuild:dev": "node-gyp rebuild --debug && npx tsc",
+    "docs:build": "typedoc lib/index.ts --out generated/docs --name \"node-lxc\" --theme default --excludePrivate --excludeProtected --entryPointStrategy expand",
     "build:dev": "node-gyp build --debug",
     "build:test": "node-gyp build",
     "dev:cpp": "npm run rebuild:dev && node ./tests/async_console.js",

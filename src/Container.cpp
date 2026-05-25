@@ -87,6 +87,10 @@ Napi::Object Container::Init(Napi::Env env, Napi::Object exports) {
 
                             InstanceMethod("exec", &Container::Exec),
 
+                            InstanceMethod("setTimeout", &Container::SetTimeout),
+                            InstanceMethod("mayControl", &Container::MayControl),
+                            InstanceMethod("getConfigItems", &Container::GetConfigItems),
+                            InstanceMethod("stats", &Container::Stats),
 
                             //Custom Enhancements
                             InstanceMethod("consoleAsync", &Container::ConsoleAsync),
@@ -104,7 +108,9 @@ Napi::Value Container::GetError(const Napi::CallbackInfo &info) {
     assert(_container, "Invalid container pointer")
     auto obj = Napi::Object::New(info.Env());
     obj.Set("num", Napi::Number::New(info.Env(), _container->error_num));
-    obj.Set("string", Napi::String::New(info.Env(), _container->error_string));
+    obj.Set("string", _container->error_string
+        ? Napi::String::New(info.Env(), _container->error_string).As<Napi::Value>()
+        : info.Env().Null());
     return obj;
 }
 
@@ -207,7 +213,7 @@ Napi::Value Container::LoadConfig(const Napi::CallbackInfo &info) {
     assert_deferred(_container, "Invalid container pointer")
     check_deferred(info.Length() <= 0 || !info[0].IsString(), "Invalid arguments")
     auto alt_file = info[0].ToString().Utf8Value();
-    auto worker = new AsyncPromise<>(deferred, [this, &alt_file](AsyncPromise<> *worker) {
+    auto worker = new AsyncPromise<>(deferred, [this, alt_file](AsyncPromise<> *worker) {
         if (!_container->load_config(_container, alt_file.c_str())) {
             worker->Error(std::string(_container->name) + " is unable to load config " + alt_file);
             return;
@@ -548,42 +554,40 @@ Napi::Value Container::GetConfigItem(const Napi::CallbackInfo &info) {
 Napi::Value Container::GetRunningConfigItem(const Napi::CallbackInfo &info) {
     assert(_container, "Invalid container pointer")
     check(info.Length() <= 0 || !info[0].IsString(), "Invalid arguments")
-    return Napi::String::New(info.Env(),
-                             _container->get_running_config_item(_container, info[0].ToString().Utf8Value().c_str()));
+    char *result = _container->get_running_config_item(_container, info[0].ToString().Utf8Value().c_str());
+    if (!result) return info.Env().Null();
+    Napi::String val = Napi::String::New(info.Env(), result);
+    free(result);
+    return val;
 }
 
 Napi::Value Container::GetKeys(const Napi::CallbackInfo &info) {
     assert(_container, "Invalid container pointer")
 
     auto keys = Napi::Array::New(info.Env());
+    std::string prefixStr;
+    if (info[0].IsString()) prefixStr = info[0].ToString().Utf8Value();
+    const char *prefix = info[0].IsString() ? prefixStr.c_str() : nullptr;
 
-    char *value;
-    int len = _container->get_keys(_container, info[0].IsString() ? info[0].ToString().Utf8Value().c_str() : nullptr,
-                                   nullptr, 0);
+    int len = _container->get_keys(_container, prefix, nullptr, 0);
     if (len <= 0) {
         return keys;
     }
 
-again:
-    value = (char *) malloc(sizeof(char) * len + 1);
-    if (value == nullptr)
-        goto again;
-
-    if (_container->get_keys(_container, info[0].IsString() ? info[0].ToString().Utf8Value().c_str() : nullptr, value,
-                             len + 1) !=
-        len) {
-        Napi::Error::New(info.Env(), "Key amount mismatch on retrieval").ThrowAsJavaScriptException();
-        free(value);
+    std::unique_ptr<char[]> value(new char[len + 1]);
+    if (_container->get_keys(_container, prefix, value.get(), len + 1) != len) {
+        Napi::Error::New(info.Env(), "Key count mismatch on retrieval").ThrowAsJavaScriptException();
+        return keys;
     }
-    // region split string /n
-    std::string s(value);
-    std::stringstream ss(s);
+
+    std::stringstream ss(value.get());
     std::string item;
     int index = 0;
     while (getline(ss, item, '\n')) {
-        keys.Set(index++, Napi::String::New(info.Env(), item));
+        if (!item.empty()) {
+            keys.Set(index++, Napi::String::New(info.Env(), item));
+        }
     }
-    // endregion
     return keys;
 }
 
@@ -642,22 +646,17 @@ Napi::Value Container::GetCGroupItem(const Napi::CallbackInfo &info) {
     assert(_container, "Invalid container pointer")
     check(info.Length() <= 0 || !info[0].IsString(), "Invalid arguments")
 
-    char *value;
-    int len = _container->get_cgroup_item(_container, info[0].ToString().Utf8Value().c_str(), nullptr, 0);
+    auto subsys = info[0].ToString().Utf8Value();
+    int len = _container->get_cgroup_item(_container, subsys.c_str(), nullptr, 0);
     if (len <= 0) {
         return info.Env().Undefined();
     }
 
-again:
-    value = (char *) malloc(sizeof(char) * len + 1);
-    if (value == nullptr)
-        goto again;
-
-    if (_container->get_cgroup_item(_container, info[0].ToString().Utf8Value().c_str(), value, len + 1) != len) {
-        free(value);
+    std::unique_ptr<char[]> value(new char[len + 1]);
+    if (_container->get_cgroup_item(_container, subsys.c_str(), value.get(), len + 1) != len) {
         return info.Env().Undefined();
     }
-    return Napi::String::New(info.Env(), value);
+    return Napi::String::New(info.Env(), value.get());
 }
 
 void Container::SetCGroupItem(const Napi::CallbackInfo &info) {
@@ -1332,6 +1331,9 @@ Napi::Value Container::Attach(const Napi::CallbackInfo &info) {
             Array::free(attach_options->extra_env_vars, extra_env_varsLength);
             Array::free(attach_options->extra_keep_env, extra_keep_envLength);
             free(attach_options->lsm_label);
+#if VERSION_AT_LEAST(4, 0, 9)
+            delete[] attach_options->groups.list;
+#endif
             free(attach_options);
         },
         AsyncPromise<int>::NumberWrapper);
@@ -1408,27 +1410,63 @@ Napi::Value Container::Exec(const Napi::CallbackInfo &info) {
     }
 #endif
 
-    auto *command = (lxc_attach_command_t *) malloc(sizeof(struct lxc_attach_command_t));
+    if (!options.Has("argv") || !options.Get("argv").IsArray()) {
+        deferred.Reject(Napi::String::New(info.Env(), "exec requires options.argv array"));
+        free(attach_options->initial_cwd);
+        Array::free(attach_options->extra_env_vars, extra_env_varsLength);
+        Array::free(attach_options->extra_keep_env, extra_keep_envLength);
+        free(attach_options->lsm_label);
+#if VERSION_AT_LEAST(4, 0, 9)
+        delete[] attach_options->groups.list;
+#endif
+        free(attach_options);
+        return deferred.Promise();
+    }
+
     auto argv = Array::NapiToCharStarArray(options.Get("argv").As<Napi::Array>(), argvLength);
+    if (argvLength == 0 || !argv || !argv[0]) {
+        Array::free(argv, argvLength);
+        deferred.Reject(Napi::String::New(info.Env(), "exec requires at least one argv entry"));
+        free(attach_options->initial_cwd);
+        Array::free(attach_options->extra_env_vars, extra_env_varsLength);
+        Array::free(attach_options->extra_keep_env, extra_keep_envLength);
+        free(attach_options->lsm_label);
+#if VERSION_AT_LEAST(4, 0, 9)
+        delete[] attach_options->groups.list;
+#endif
+        free(attach_options);
+        return deferred.Promise();
+    }
+
+    auto *command = (lxc_attach_command_t *) malloc(sizeof(struct lxc_attach_command_t));
     command->program = argv[0];
     command->argv = argv;
 
     auto worker = new AsyncPromise<int>(
         deferred,
-        [this, attach_options, command, extra_env_varsLength, extra_keep_envLength](
+        [this, attach_options, command, argv, argvLength, extra_env_varsLength, extra_keep_envLength](
     AsyncPromise<int> *worker) {
             pid_t pid;
             int ret = _container->attach(_container, lxc_attach_run_command, command, attach_options, &pid);
             if (ret < 0) {
                 worker->Error(strerror(errno));
             } else {
-                worker->Result(pid);
+                auto status = wait_for_pid_status(pid);
+                int exit_code = 0;
+                if (status >= 0 && WIFEXITED(status)) {
+                    exit_code = WEXITSTATUS(status);
+                }
+                worker->Result(exit_code);
             }
             free(attach_options->initial_cwd);
             Array::free(attach_options->extra_env_vars, extra_env_varsLength);
             Array::free(attach_options->extra_keep_env, extra_keep_envLength);
             free(attach_options->lsm_label);
+#if VERSION_AT_LEAST(4, 0, 9)
+            delete[] attach_options->groups.list;
+#endif
             free(attach_options);
+            Array::free(argv, argvLength);
             free(command);
         },
         AsyncPromise<int>::NumberWrapper);
@@ -1743,7 +1781,7 @@ Napi::Value Container::Restore(const Napi::CallbackInfo &info) {
 Napi::Value Container::Migrate(const Napi::CallbackInfo &info) {
     auto deferred = Napi::Promise::Deferred::New(info.Env());
     assert_deferred(_container, "Invalid container pointer")
-    check_deferred(info.Length() <= 0 || !info[0].IsNumber() || !info[0].IsObject(), "Invalid arguments")
+    check_deferred(info.Length() < 2 || !info[0].IsNumber() || !info[1].IsObject(), "Invalid arguments")
 
     auto cmd = info[0].ToNumber().Int32Value();
     auto options = info[1].ToObject();
@@ -1787,29 +1825,31 @@ Napi::Value Container::ConsoleLog(const Napi::CallbackInfo &info) {
 
     auto options = info[0].ToObject();
 
-    uint64_t _read_max = (uint64_t) opt_obj_val("read_max", ToNumber().Int64Value(), 0);
+    auto *read_max = new uint64_t((uint64_t) opt_obj_val("read_max", ToNumber().Int64Value(), 0));
 
     lxc_console_log log
     {
         .clear = opt_obj_val("clear", ToBoolean(), false),
         .read = opt_obj_val("read", ToBoolean(), false),
-        .read_max = &_read_max,
+        .read_max = read_max,
         .data = nullptr
     };
 
     auto worker = new AsyncPromise<char *, size_t>(
         deferred,
-        [this, &log](AsyncPromise<char *, size_t> *worker) {
+        [this, log, read_max](AsyncPromise<char *, size_t> *worker) mutable {
             if (!_container->may_control(_container)) {
                 worker->Error("Insufficient privileges to control " + std::string(_container->name));
+                delete read_max;
                 return;
             }
             auto ret = _container->console_log(_container, &log);
             if (ret < 0) {
-                worker->Error(std::string(strerror(-ret)) + "- Failed to retrieve console log");
+                worker->Error(std::string(strerror(-ret)) + " - Failed to retrieve console log");
             } else {
                 worker->Result(log.data, *log.read_max);
             }
+            delete read_max;
         },
         AsyncPromise<char *, size_t>::SizeCharStringWrapper);
     return worker->Promise();
@@ -1840,7 +1880,7 @@ Napi::Value Container::Mount(const Napi::CallbackInfo &info) {
 
     auto worker = new AsyncPromise<>(
         deferred,
-        [this, source, target, filesystemtype, mountflags, &mnt](AsyncPromise<> *worker) {
+        [this, source, target, filesystemtype, mountflags, mnt](AsyncPromise<> *worker) mutable {
             if (!_container->may_control(_container)) {
                 worker->Error("Insufficient privileges to control " + std::string(_container->name));
                 return;
@@ -1874,7 +1914,7 @@ Napi::Value Container::Umount(const Napi::CallbackInfo &info) {
 
     auto worker = new AsyncPromise<>(
         deferred,
-        [this, target, mountflags, &mnt](AsyncPromise<> *worker) {
+        [this, target, mountflags, mnt](AsyncPromise<> *worker) mutable {
             if (!_container->may_control(_container)) {
                 worker->Error("Insufficient privileges to control " + std::string(_container->name));
                 return;
@@ -1955,5 +1995,109 @@ Napi::Value Container::DevptsFd(const Napi::CallbackInfo &info) {
             worker->Result(ret);
         },
         AsyncPromise<int>::NumberWrapper);
+    return worker->Promise();
+}
+
+Napi::Value Container::SetTimeout(const Napi::CallbackInfo &info) {
+    assert(_container, "Invalid container pointer")
+    check(info.Length() <= 0 || !info[0].IsNumber(), "Invalid arguments")
+#ifdef LXC_HAS_SET_TIMEOUT
+    int timeout = info[0].ToNumber().Int32Value();
+    return Napi::Boolean::New(info.Env(), _container->set_timeout(_container, timeout));
+#else
+    Napi::TypeError::New(info.Env(), "set_timeout is not available in this LXC build").ThrowAsJavaScriptException();
+    return info.Env().Undefined();
+#endif
+}
+
+Napi::Value Container::MayControl(const Napi::CallbackInfo &info) {
+    assert(_container, "Invalid container pointer")
+    return Napi::Boolean::New(info.Env(), _container->may_control(_container));
+}
+
+Napi::Value Container::GetConfigItems(const Napi::CallbackInfo &info) {
+    assert(_container, "Invalid container pointer")
+
+    std::string prefixStr;
+    if (info[0].IsString()) prefixStr = info[0].ToString().Utf8Value();
+    const char *prefix = info[0].IsString() ? prefixStr.c_str() : nullptr;
+    auto result = Napi::Object::New(info.Env());
+
+    int len = _container->get_keys(_container, prefix, nullptr, 0);
+    if (len <= 0) return result;
+
+    std::unique_ptr<char[]> keysBuf(new char[len + 1]);
+    if (_container->get_keys(_container, prefix, keysBuf.get(), len + 1) != len) return result;
+
+    std::stringstream ss(keysBuf.get());
+    std::string key;
+    while (getline(ss, key, '\n')) {
+        if (key.empty()) continue;
+        int vlen = _container->get_config_item(_container, key.c_str(), nullptr, 0);
+        if (vlen <= 0) {
+            result.Set(key, info.Env().Null());
+            continue;
+        }
+        std::unique_ptr<char[]> val(new char[vlen + 1]);
+        if (_container->get_config_item(_container, key.c_str(), val.get(), vlen + 1) == vlen) {
+            result.Set(key, Napi::String::New(info.Env(), val.get()));
+        } else {
+            result.Set(key, info.Env().Null());
+        }
+    }
+    return result;
+}
+
+static std::string readCgroupItem(lxc_container *c, const char *key) {
+    int len = c->get_cgroup_item(c, key, nullptr, 0);
+    if (len <= 0) return {};
+    std::unique_ptr<char[]> buf(new char[len + 1]);
+    if (c->get_cgroup_item(c, key, buf.get(), len + 1) != len) return {};
+    return std::string(buf.get());
+}
+
+using StatsMap = std::vector<std::pair<std::string, std::string>>;
+
+Napi::Value Container::Stats(const Napi::CallbackInfo &info) {
+    auto deferred = Napi::Promise::Deferred::New(info.Env());
+    assert_deferred(_container, "Invalid container pointer")
+
+    auto worker = new AsyncPromise<StatsMap *>(
+        deferred,
+        [this](AsyncPromise<StatsMap *> *worker) {
+            if (!_container->is_running(_container)) {
+                worker->Error(std::string(_container->name) + " not running");
+                return;
+            }
+            static const char *keys[] = {
+                "memory.usage_in_bytes",
+                "memory.limit_in_bytes",
+                "memory.memsw.usage_in_bytes",
+                "cpuacct.usage",
+                "cpu.stat",
+                "blkio.throttle.io_service_bytes",
+                nullptr
+            };
+            auto *stats = new StatsMap();
+            for (int i = 0; keys[i]; ++i) {
+                stats->emplace_back(keys[i], readCgroupItem(_container, keys[i]));
+            }
+            worker->Result(stats);
+        },
+        std::function<Napi::Value(const AsyncPromise<StatsMap *> *, const std::tuple<StatsMap *> &)>{
+            [](const AsyncPromise<StatsMap *> *worker, const std::tuple<StatsMap *> &data) -> Napi::Value {
+                auto *stats = std::get<0>(data);
+                auto result = Napi::Object::New(worker->Env());
+                for (const auto &[key, value] : *stats) {
+                    if (value.empty()) {
+                        result.Set(key, worker->Env().Null());
+                    } else {
+                        result.Set(key, Napi::String::New(worker->Env(), value));
+                    }
+                }
+                delete stats;
+                return result;
+            }
+        });
     return worker->Promise();
 }

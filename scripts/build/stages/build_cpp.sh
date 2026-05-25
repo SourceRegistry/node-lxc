@@ -1,31 +1,21 @@
-# build_cpp.sh
+LOG_DIR="${1:?build_cpp.sh requires a log directory as argument 1}"
+LOG_FILE="${2:-stage-build_cpp}"
+LOG="$LOG_DIR/$LOG_FILE.log"
 
-if [ "$#" -eq 0 ]; then
-  echo "build_cpp.sh requires a log directory location as argument 1"
-fi
+step() {
+  local desc="$1"; shift
+  printf "%s" "$desc"
+  if "$@" &>>"$LOG"; then
+    printf " 🟢\n"
+  else
+    printf " 🔴\n   SEE: %s\n" "$LOG"
+    exit 1
+  fi
+}
 
-LOG_FILENAME=${2:-"stage-build_cpp"}
-
-{
-  printf "🧩 C/C++ addon\n"
-  echo "++++++[node-gyp build]++++++" &>>"$1/$LOG_FILENAME.log" &&
-    {
-      printf "   🏗️ Building C/C++ bindings (.node)" &&
-      node-gyp build &>>"$1/$LOG_FILENAME.log"  &&  echo "done" &>>"$1/$LOG_FILENAME.log" &&
-      printf " 🟢\n"
-    } || {
-      printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
-    }
-    printf "   ➡️ Copying 'Release' binaries\n" &&
-    {
-      printf "      ➡️  ️Copying 'x86_64-linux-gnu' binary" &&
-        echo "++++++[mkdir -p ./package/bin/x86_64-linux-gnu]++++++" &>>"$1/$LOG_FILENAME.log" &&
-        mkdir -p ./package/bin/x86_64-linux-gnu &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-        echo "++++++[cp -r build/Release/node-lxc.node ./package/bin/x86_64-linux-gnu/node-lxc.node]++++++" &>>"$1/$LOG_FILENAME.log" &&
-        cp -r build/Release/node-lxc.node ./package/bin/x86_64-linux-gnu/node-lxc.node &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-        printf " 🟢\n"
-    } ||
-    { printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
-    }
-} || { printf " 🔴\n SEE: %s\n" "$1/$LOG_FILENAME.log" && exit 1
-     }
+printf "🧩 C/C++ addon\n"
+step "   🏗️  Building C/C++ bindings"         node-gyp build
+step "   ➡️  Staging x86_64-linux-gnu binary"  bash -c "
+  mkdir -p ./package/bin/x86_64-linux-gnu &&
+  cp build/Release/node-lxc.node ./package/bin/x86_64-linux-gnu/node-lxc.node
+"

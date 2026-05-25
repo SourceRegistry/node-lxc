@@ -1,28 +1,14 @@
 #!/bin/bash
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
-printf "🚀 Starting Build for '$(node -p "require('./package.json').name")'\n"
-
-SCRIPT_DIR=$(realpath $(dirname $0))
-
-#region Setup logging
-LOG_DIR=${2:-"$SCRIPT_DIR/../logs/build/$(date +%s)"}
+LOG_DIR="${1:-"$SCRIPT_DIR/../logs/build/$(date +%s)"}"
 mkdir -p "$LOG_DIR"
-printf "💬 You can find the logs in the script directory(%s)\n" "$LOG_DIR"
-#endregion
 
-rm -r ./package &>>"$LOG_DIR/stage-remove.log"
+printf "🚀 Building '%s'\n" "$(node -p "require('./package.json').name")"
+printf "💬 Logs: %s\n" "$LOG_DIR"
 
+rm -rf ./package 2>>"$LOG_DIR/remove.log" || true
 
-source "$SCRIPT_DIR/stages/build_env.sh" "$LOG_DIR"
-source "$SCRIPT_DIR/stages/build_cpp.sh" "$LOG_DIR"
-source "$SCRIPT_DIR/stages/build_ts.sh" "$LOG_DIR"
-
-#{
-#  printf "️💫 Running NodeJS Packaging script" &&
-#    "$SCRIPT_DIR/stages/build_package_json.js" &>>"$LOG_DIR/action-build_package_json.log" &&
-#    printf " 🟢\n"
-#} ||
-#  {
-#    printf " 🔴\n"
-#    exit 1
-#  }
+source "$SCRIPT_DIR/stages/build_env.sh"  "$LOG_DIR"
+source "$SCRIPT_DIR/stages/build_cpp.sh"  "$LOG_DIR"
+source "$SCRIPT_DIR/stages/build_ts.sh"   "$LOG_DIR"

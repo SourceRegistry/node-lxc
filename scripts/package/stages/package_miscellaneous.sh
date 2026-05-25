@@ -1,53 +1,20 @@
-# build_ts.sh
+LOG_DIR="${1:?package_miscellaneous.sh requires a log directory as argument 1}"
+LOG_FILE="${2:-stage-package_miscellaneous}"
+LOG="$LOG_DIR/$LOG_FILE.log"
 
-if [ "$#" -eq 0 ]; then
-  echo "package_miscellaneous.sh requires a log directory location as argument 1"
-fi
-
-LOG_FILENAME=${2:-"stage-package_miscellaneous"}
-
-{
-  printf "📚 Adding miscellaneous files\n"
-  {
-    printf "   📖️ Copying examples folder" &&
-      echo "++++++[mkdir -p ./package/examples]++++++" &>>"$1/$LOG_FILENAME.log" &&
-      mkdir -p ./package/examples &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-      echo "++++++[cp -r ./examples/* ./package/examples/]++++++" &>>"$1/$LOG_FILENAME.log" &&
-      cp -r ./examples/* ./package/examples/ &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-      printf " 🟢\n"
-  } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
+step() {
+  local desc="$1"; shift
+  printf "%s" "$desc"
+  if "$@" &>>"$LOG"; then
+    printf " 🟢\n"
+  else
+    printf " 🔴\n   SEE: %s\n" "$LOG"
     exit 1
-  }
-  {
-    printf "   🗒️ Copying package.json" &&
-      echo "++++++[cp ./package.json ./package/]++++++" &>>"$1/$LOG_FILENAME.log" &&
-      cp ./package.json ./package/package.json &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-      printf " 🟢\n"
-  } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
-    exit 1
-  }
-  {
-    printf "   ⚖️ Copying LICENSE file" &&
-      echo "++++++[cp ./LICENSE ./package/LICENSE]++++++" &>>"$1/$LOG_FILENAME.log" &&
-      cp ./LICENSE ./package/LICENSE &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-      printf " 🟢\n"
-  } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
-    exit 1
-  }
-  {
-    printf "   👓 Copying README file" &&
-      echo "++++++[cp ./README.md ./package/README.md]++++++" &>>"$1/$LOG_FILENAME.log" &&
-      cp ./README.md ./package/README.md &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-      printf " 🟢\n"
-  } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
-    exit 1
-  }
-
-} || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log\n"
-  exit 1
+  fi
 }
+
+printf "📚 Staging miscellaneous files\n"
+step "   📖  examples/"    bash -c "mkdir -p ./package/examples && cp -r ./examples/* ./package/examples/"
+step "   🗒️  package.json" cp ./package.json ./package/package.json
+step "   ⚖️  LICENSE"       cp ./LICENSE ./package/LICENSE
+step "   👓  README.md"    cp ./README.md ./package/README.md

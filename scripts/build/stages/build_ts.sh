@@ -1,26 +1,18 @@
-# build_ts.sh
+LOG_DIR="${1:?build_ts.sh requires a log directory as argument 1}"
+LOG_FILE="${2:-stage-build_ts}"
+LOG="$LOG_DIR/$LOG_FILE.log"
 
-if [ "$#" -eq 0 ]; then
-  echo "build_ts.sh requires a log directory location as argument 1"
-fi
-
-LOG_FILENAME=${2:-"stage-build_ts"}
-
-{
-  printf "🔨 Compiling typescript files"
-  tsc --build &>>"$1/$LOG_FILENAME.log" && printf " 🟢\n" &&
-    {
-      printf "   ➡️ Moving typescript definition to 'package/lib'"
-      echo "++++++[mkdir -p ./package/lib]++++++" &>>"$1/$LOG_FILENAME.log" &&
-        mkdir -p ./package/lib &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log" &&
-        echo "++++++[cp -r build/tsc/* ./package/lib]++++++" &>>"$1/$LOG_FILENAME.log" &&
-        cp -r build/tsc/* ./package/lib &>>"$1/$LOG_FILENAME.log" && echo "done" &>>"$1/$LOG_FILENAME.log"
-      printf " 🟢\n"
-    } || {
-    printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
+step() {
+  local desc="$1"; shift
+  printf "%s" "$desc"
+  if "$@" &>>"$LOG"; then
+    printf " 🟢\n"
+  else
+    printf " 🔴\n   SEE: %s\n" "$LOG"
     exit 1
-  }
-} || {
-  printf " 🔴\n SEE: $1/$LOG_FILENAME.log"
-  exit 1
+  fi
 }
+
+printf "🔨 TypeScript\n"
+step "   🔨  Compiling"    tsc --build
+step "   ➡️  Staging lib"  bash -c "mkdir -p ./package/lib && cp -r build/tsc/* ./package/lib"
