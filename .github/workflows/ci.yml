@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - "**"
+    paths:
+      - "src/**"
+      - "lib/**"
   workflow_dispatch:
 
 concurrency:

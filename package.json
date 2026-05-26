@@ -48,6 +48,7 @@
     "typedoc": "^0.28.19"
   },
   "scripts": {
+    "install": "echo 'Prebuilt binary ships in bin/. Run: npx node-gyp build'",
     "setup": "./scripts/setup/setup.sh",
     "test": "node --require ts-node/register --test tests/index.ts",
     "test:watch": "node --require ts-node/register --test --watch tests/index.ts",
