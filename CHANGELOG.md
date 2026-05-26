@@ -1,3 +1,16 @@
+## [1.1.6](https://github.com/SourceRegistry/node-lxc/compare/v1.1.5...v1.1.6) (2026-05-26)
+
+
+### Bug Fixes
+
+* dev container setup ([87d9a91](https://github.com/SourceRegistry/node-lxc/commit/87d9a91c574397ba442fbca7a43a5588f1e2bcaa))
+* **docs:** change homepage to point to github pages ([4b821c1](https://github.com/SourceRegistry/node-lxc/commit/4b821c12c8c2afe048110bf7a548a7ae0d80946d))
+* **trigger:** for release ([eaa15c7](https://github.com/SourceRegistry/node-lxc/commit/eaa15c708dad92c5943866c674fdf0f464ff14d3))
+* **trigger:** for release ([9164c98](https://github.com/SourceRegistry/node-lxc/commit/9164c98fcecbe6955af67b203648a76b8b5e260c))
+* **trigger:** for release ([311a24b](https://github.com/SourceRegistry/node-lxc/commit/311a24bc54e2e18b7b58951ab2e47bfb63cdf506))
+* **try:** release pipeline to only trigger on changes from lib and src ([01c579e](https://github.com/SourceRegistry/node-lxc/commit/01c579e0e4d62f66aaa242877af76317571e7081))
+* **try:** release pipeline to only trigger on changes from lib, src and package.json ([a726898](https://github.com/SourceRegistry/node-lxc/commit/a726898746ea9e5f2a41601ad1cbaf97bc8e479c))
+
 ## [1.1.5](https://github.com/SourceRegistry/node-lxc/compare/v1.1.4...v1.1.5) (2026-05-26)
 
 
