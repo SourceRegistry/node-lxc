@@ -13,10 +13,12 @@
       "assets": [
         {
           "path": "package/bin/x86_64-linux-gnu/node-lxc.node",
+          "name": "node-lxc-x86_64-linux-gnu.node",
           "label": "native addon (x86_64-linux-gnu)"
         },
         {
           "path": "package/bin/aarch64-linux-gnu/node-lxc.node",
+          "name": "node-lxc-aarch64-linux-gnu.node",
           "label": "native addon (aarch64-linux-gnu)"
         }
       ]
