@@ -1,3 +1,15 @@
+# [1.1.0](https://github.com/SourceRegistry/node-lxc/compare/v1.0.1...v1.1.0) (2026-05-26)
+
+
+### Bug Fixes
+
+* use -llxc for arch-neutral linking and set gypfile false to prevent npm rebuild on install ([f4d4350](https://github.com/SourceRegistry/node-lxc/commit/f4d4350f87ea6d7325d66f6defeb1613d7333070))
+
+
+### Features
+
+* add arm64 support and execOutput/execAsync methods ([3205c46](https://github.com/SourceRegistry/node-lxc/commit/3205c46e519b4b6d57ffb30d6e831c75a8d403e6))
+
 ## [1.0.1](https://github.com/SourceRegistry/node-lxc/compare/v1.0.0...v1.0.1) (2026-05-25)
 
 
