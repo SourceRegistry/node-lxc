@@ -5,10 +5,6 @@ on:
   push:
     branches:
       - "**"
-    paths:
-      - "src/**"
-      - "lib/**"
-      - "package.json"
   workflow_dispatch:
 
 concurrency:
@@ -98,8 +94,6 @@ jobs:
           mkdir -p package/lib
           cp -r build/tsc/* package/lib/
           cp package.json LICENSE README.md package/
-          mkdir -p package/examples
-          cp -r examples/* package/examples/
 
       - name: Upload package
         uses: actions/upload-artifact@v4
