@@ -819,9 +819,14 @@ Napi::Value Container::Create(const Napi::CallbackInfo &info) {
                 }
             };
             if (!_container->create(_container, template_.c_str(), bdevtype.c_str(), &specs, flags, argv)) {
-                std::string msg = _container->error_string
-                    ? std::string(_container->error_string)
-                    : strerror(_container->error_num ? _container->error_num : errno);
+                std::string msg;
+                if (_container->error_string && _container->error_string[0] != '\0') {
+                    msg = std::string(_container->error_string);
+                } else if (_container->error_num != 0) {
+                    msg = "lxc_create failed: " + std::string(strerror(_container->error_num));
+                } else {
+                    msg = "lxc_create failed: " + std::string(strerror(errno));
+                }
                 worker->Error(msg);
             }
             Array::free(argv, argvLength);
