@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/SourceRegistry/node-lxc/compare/v1.1.3...v1.1.4) (2026-05-26)
+
+
+### Bug Fixes
+
+* dev container setup ([8d2a4ac](https://github.com/SourceRegistry/node-lxc/commit/8d2a4acf7f2faa2303ec05d46f4ee25ee12fec13))
+
 ## [1.1.3](https://github.com/SourceRegistry/node-lxc/compare/v1.1.2...v1.1.3) (2026-05-26)
 
 
