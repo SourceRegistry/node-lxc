@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/SourceRegistry/node-lxc/compare/v1.1.0...v1.1.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* use unique asset names for GitHub release to avoid name collision ([8cdf0a7](https://github.com/SourceRegistry/node-lxc/commit/8cdf0a73c823e008d6a325fdc6d246d8189fae09))
+
 # [1.1.0](https://github.com/SourceRegistry/node-lxc/compare/v1.0.1...v1.1.0) (2026-05-26)
 
 
