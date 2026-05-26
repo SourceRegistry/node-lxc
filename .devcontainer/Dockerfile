@@ -14,13 +14,14 @@ RUN if [ "${REINSTALL_CMAKE_VERSION_FROM_SOURCE}" != "none" ]; then \
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs
 
+# Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
+
 # LXC and native build dependencies
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
         lxc \
         lxc-dev \
-        lxc-templates \
-        liblxc-dev \
         lxcfs \
         bridge-utils \
         dnsmasq-base \
