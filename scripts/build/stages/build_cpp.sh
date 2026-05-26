@@ -13,9 +13,17 @@ step() {
   fi
 }
 
+MACHINE=$(uname -m)
+case "$MACHINE" in
+  x86_64)  TRIPLET="x86_64-linux-gnu" ;;
+  aarch64) TRIPLET="aarch64-linux-gnu" ;;
+  armv7l)  TRIPLET="arm-linux-gnueabihf" ;;
+  *) printf "Unsupported architecture: %s\n" "$MACHINE" >&2; exit 1 ;;
+esac
+
 printf "🧩 C/C++ addon\n"
-step "   🏗️  Building C/C++ bindings"         npx node-gyp build
-step "   ➡️  Staging x86_64-linux-gnu binary"  bash -c "
-  mkdir -p ./package/bin/x86_64-linux-gnu &&
-  cp build/Release/node-lxc.node ./package/bin/x86_64-linux-gnu/node-lxc.node
+step "   🏗️  Building C/C++ bindings"      npx node-gyp build
+step "   ➡️  Staging binary ($TRIPLET)"    bash -c "
+  mkdir -p ./package/bin/$TRIPLET &&
+  cp build/Release/node-lxc.node ./package/bin/$TRIPLET/node-lxc.node
 "

@@ -12,9 +12,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Test and build
-    runs-on: ubuntu-latest
+  build-and-test:
+    name: Build and test (${{ matrix.triplet }})
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            triplet: x86_64-linux-gnu
+          - runner: ubuntu-24.04-arm
+            triplet: aarch64-linux-gnu
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,14 +49,65 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build distributable package
-        run: npm run package
+      - name: Upload native addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: addon-${{ matrix.triplet }}
+          path: build/Release/node-lxc.node
+          if-no-files-found: error
+
+  package:
+    name: Assemble package
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Compile TypeScript
+        run: npx tsc --build
+
+      - name: Download x86_64-linux-gnu addon
+        uses: actions/download-artifact@v4
+        with:
+          name: addon-x86_64-linux-gnu
+          path: package/bin/x86_64-linux-gnu
+
+      - name: Download aarch64-linux-gnu addon
+        uses: actions/download-artifact@v4
+        with:
+          name: addon-aarch64-linux-gnu
+          path: package/bin/aarch64-linux-gnu
+
+      - name: Stage package files
+        run: |
+          mkdir -p package/lib
+          cp -r build/tsc/* package/lib/
+          cp package.json LICENSE README.md package/
+          mkdir -p package/examples
+          cp -r examples/* package/examples/
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: package/
+          if-no-files-found: error
 
   release:
     name: Release
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/alpha')
-    needs:
-      - test
+    needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -70,14 +128,14 @@ jobs:
           node-version: 24
           registry-url: "https://registry.npmjs.org/"
 
-      - name: Install system dependencies
-        run: sudo apt-get update -y && sudo apt-get install -y g++ cmake lxc lxc-dev
-
       - name: Install npm dependencies
         run: npm install
 
-      - name: Build distributable package
-        run: npm run package
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: package
 
       - name: Run semantic-release
         run: ./node_modules/.bin/semantic-release

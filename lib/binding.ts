@@ -18,11 +18,15 @@ if (!is_package) {
     }
     addonPath = path.join(__dirname, '..','build', mode, `${base_name}.node`);
 } else {
-    if (platform === 'linux' && arch === 'x64') {
-        addonPath = path.join(__dirname, '..', 'bin', 'x86_64-linux-gnu', `${base_name}.node`);
-    } else {
+    const archToTriplet: Record<string, string> = {
+        x64:   'x86_64-linux-gnu',
+        arm64: 'aarch64-linux-gnu',
+    };
+    const triplet = platform === 'linux' ? archToTriplet[arch] : undefined;
+    if (!triplet) {
         throw new Error(`Unsupported platform or architecture: ${platform}-${arch}`);
     }
+    addonPath = path.join(__dirname, '..', 'bin', triplet, `${base_name}.node`);
 }
 
 

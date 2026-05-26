@@ -7,6 +7,9 @@
 
 #include <fcntl.h>
 #include <atomic>
+#include <mutex>
+#include <thread>
+#include <poll.h>
 
 #include <sys/wait.h>
 #include <sstream>
@@ -16,6 +19,400 @@
 #include "./helpers/Array.h"
 #include "./helpers/helpers.h"
 #include "./helpers/AsyncPromise.h"
+
+// Forward declaration — defined later in this file
+int wait_for_pid_status(pid_t pid);
+
+// ============================================================================
+// ExecSession — backing struct for execAsync()
+// ============================================================================
+
+struct ExecSession {
+    int stdout_fd = -1;
+    int stderr_fd = -1;
+    int done_rd   = -1;
+    int done_wr   = -1;
+    pid_t pid     = -1;
+
+    std::atomic<bool> cleaned{false};
+    std::atomic<bool> exitEmitted{false};
+    std::atomic<int>  activePipes{2};
+    std::atomic<bool> waitpidDone{false};
+    std::atomic<int>  storedExitCode{-1};
+
+    std::mutex mutex;
+
+    uv_poll_t *stdoutPoll = nullptr;
+    uv_poll_t *stderrPoll = nullptr;
+    uv_poll_t *donePoll   = nullptr;
+
+    std::atomic<bool> stdoutTsfnInit{false};
+    std::atomic<bool> stderrTsfnInit{false};
+    std::atomic<bool> exitTsfnInit{false};
+
+    Napi::ThreadSafeFunction stdoutTsfn;
+    Napi::ThreadSafeFunction stderrTsfn;
+    Napi::ThreadSafeFunction exitTsfn;
+
+    Napi::ObjectReference *jsRef = nullptr;
+
+    ~ExecSession() { cleanup(); }
+
+    void emitDataChunk(std::vector<uint8_t> *vec,
+                       Napi::ThreadSafeFunction &tsfn,
+                       std::atomic<bool> &init) {
+        if (!init.load()) { delete vec; return; }
+        napi_status st = tsfn.NonBlockingCall(vec,
+            [](Napi::Env env, Napi::Function cb, std::vector<uint8_t> *v) {
+                if (!v) return;
+                if (cb.IsFunction())
+                    cb.Call({Napi::Buffer<uint8_t>::New(env, v->data(), v->size())});
+                delete v;
+            });
+        if (st != napi_ok) delete vec;
+    }
+
+    void flushPipe(int fd, Napi::ThreadSafeFunction &tsfn, std::atomic<bool> &init) {
+        if (fd < 0) return;
+        uint8_t buf[4096];
+        ssize_t n;
+        while ((n = ::read(fd, buf, sizeof(buf))) > 0)
+            emitDataChunk(new std::vector<uint8_t>(buf, buf + n), tsfn, init);
+    }
+
+    void onPipeEof(int which) {
+        auto closePipe = [](uv_poll_t *&poll, int &fd) {
+            if (poll) {
+                uv_poll_stop(poll);
+                auto *h = poll; poll = nullptr;
+                uv_close(reinterpret_cast<uv_handle_t *>(h),
+                         [](uv_handle_t *hh) { delete reinterpret_cast<uv_poll_t *>(hh); });
+            }
+            if (fd >= 0) { ::close(fd); fd = -1; }
+        };
+        if (which == 0) closePipe(stdoutPoll, stdout_fd);
+        else            closePipe(stderrPoll, stderr_fd);
+
+        if (activePipes.fetch_sub(1) == 1 && waitpidDone.load())
+            tryDoExit();
+    }
+
+    void onWaitpidDone(int code) {
+        storedExitCode.store(code);
+        waitpidDone.store(true);
+
+        if (donePoll) {
+            uv_poll_stop(donePoll);
+            auto *h = donePoll; donePoll = nullptr;
+            uv_close(reinterpret_cast<uv_handle_t *>(h),
+                     [](uv_handle_t *hh) { delete reinterpret_cast<uv_poll_t *>(hh); });
+        }
+        if (done_rd >= 0) { ::close(done_rd); done_rd = -1; }
+        if (done_wr >= 0) { ::close(done_wr); done_wr = -1; }
+
+        if (activePipes.load() == 0)
+            tryDoExit();
+    }
+
+    void tryDoExit() {
+        if (exitEmitted.exchange(true)) return;
+
+        // Flush any data still sitting in pipe buffers
+        flushPipe(stdout_fd, stdoutTsfn, stdoutTsfnInit);
+        flushPipe(stderr_fd, stderrTsfn, stderrTsfnInit);
+
+        if (exitTsfnInit.load()) {
+            int code = storedExitCode.load();
+            auto *cp = new int(code);
+            exitTsfn.NonBlockingCall(cp,
+                [](Napi::Env env, Napi::Function cb, int *c) {
+                    if (cb.IsFunction()) cb.Call({Napi::Number::New(env, *c)});
+                    delete c;
+                });
+        }
+
+        cleanup();
+    }
+
+    void cleanup() {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (cleaned.exchange(true)) return;
+
+        auto closePoll = [](uv_poll_t *&h) {
+            if (!h) return;
+            uv_poll_stop(h);
+            auto *p = h; h = nullptr;
+            uv_close(reinterpret_cast<uv_handle_t *>(p),
+                     [](uv_handle_t *hp) { delete reinterpret_cast<uv_poll_t *>(hp); });
+        };
+        closePoll(stdoutPoll);
+        closePoll(stderrPoll);
+        closePoll(donePoll);
+
+        auto closeFd = [](int &fd) { if (fd >= 0) { ::close(fd); fd = -1; } };
+        closeFd(stdout_fd);
+        closeFd(stderr_fd);
+        closeFd(done_rd);
+        closeFd(done_wr);
+
+        if (stdoutTsfnInit.exchange(false)) stdoutTsfn.Release();
+        if (stderrTsfnInit.exchange(false)) stderrTsfn.Release();
+        if (exitTsfnInit.exchange(false))   exitTsfn.Release();
+
+        if (jsRef) { jsRef->Reset(); delete jsRef; jsRef = nullptr; }
+    }
+
+    bool isClosed() const { return cleaned.load(); }
+};
+
+// ============================================================================
+// ExecAsyncWorker — runs lxc_attach off the main thread for execAsync()
+// ============================================================================
+
+class ExecAsyncWorker : public Napi::AsyncWorker {
+public:
+    ExecAsyncWorker(const Napi::Promise::Deferred &deferred,
+                    lxc_container *container,
+                    lxc_attach_options_t *opts,
+                    lxc_attach_command_t *command,
+                    char **argv, uint32_t argvLen,
+                    uint32_t envVarsLen, uint32_t keepEnvLen)
+        : Napi::AsyncWorker(deferred.Env()),
+          deferred_(deferred), _container(container),
+          opts_(opts), command_(command),
+          argv_(argv), argvLen_(argvLen),
+          envVarsLen_(envVarsLen), keepEnvLen_(keepEnvLen) {}
+
+    void Execute() override {
+        int devnull = open("/dev/null", O_RDONLY);
+
+        if (pipe(out_pipe_) < 0) {
+            SetError("stdout pipe: " + std::string(strerror(errno)));
+            if (devnull >= 0) close(devnull);
+            freeOpts();
+            return;
+        }
+        if (pipe(err_pipe_) < 0) {
+            SetError("stderr pipe: " + std::string(strerror(errno)));
+            close(out_pipe_[0]); close(out_pipe_[1]);
+            if (devnull >= 0) close(devnull);
+            freeOpts();
+            return;
+        }
+
+        opts_->stdin_fd  = devnull >= 0 ? devnull : 0;
+        opts_->stdout_fd = out_pipe_[1];
+        opts_->stderr_fd = err_pipe_[1];
+
+        int ret = _container->attach(_container, lxc_attach_run_command, command_, opts_, &pid_);
+
+        close(out_pipe_[1]);
+        close(err_pipe_[1]);
+        if (devnull >= 0) close(devnull);
+        freeOpts();
+
+        if (ret < 0) {
+            close(out_pipe_[0]);
+            close(err_pipe_[0]);
+            SetError("attach: " + std::string(strerror(errno)));
+            return;
+        }
+
+        fcntl(out_pipe_[0], F_SETFL, O_NONBLOCK);
+        fcntl(err_pipe_[0], F_SETFL, O_NONBLOCK);
+    }
+
+    void OnOK() override {
+        Napi::Env env = Env();
+        Napi::HandleScope scope(env);
+
+        int done_pipe[2] = {-1, -1};
+        if (pipe(done_pipe) < 0) {
+            ::close(out_pipe_[0]);
+            ::close(err_pipe_[0]);
+            deferred_.Reject(Napi::String::New(env, "done pipe: " + std::string(strerror(errno))));
+            return;
+        }
+        fcntl(done_pipe[0], F_SETFL, O_NONBLOCK);
+
+        auto *session    = new ExecSession();
+        session->pid      = pid_;
+        session->stdout_fd = out_pipe_[0];
+        session->stderr_fd = err_pipe_[0];
+        session->done_rd   = done_pipe[0];
+        session->done_wr   = done_pipe[1];
+
+        uv_loop_t *loop = uv_default_loop();
+
+        auto startPoll = [&](uv_poll_t *&ref, int fd, uv_poll_cb cb) -> bool {
+            auto *p = new uv_poll_t;
+            p->data = session;
+            if (uv_poll_init(loop, p, fd) < 0 || uv_poll_start(p, UV_READABLE, cb) < 0) {
+                delete p;
+                return false;
+            }
+            ref = p;
+            return true;
+        };
+
+        bool ok = startPoll(session->stdoutPoll, out_pipe_[0],
+            [](uv_poll_t *h, int status, int events) {
+                auto *sess = static_cast<ExecSession *>(h->data);
+                if (!sess || status < 0 || sess->cleaned.load()) return;
+                if (!(events & UV_READABLE)) return;
+                uint8_t buf[4096];
+                while (true) {
+                    ssize_t n = ::read(sess->stdout_fd, buf, sizeof(buf));
+                    if (n > 0)
+                        sess->emitDataChunk(new std::vector<uint8_t>(buf, buf + n),
+                                            sess->stdoutTsfn, sess->stdoutTsfnInit);
+                    else if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+                        { sess->onPipeEof(0); break; }
+                    else break;
+                }
+            });
+
+        ok = ok && startPoll(session->stderrPoll, err_pipe_[0],
+            [](uv_poll_t *h, int status, int events) {
+                auto *sess = static_cast<ExecSession *>(h->data);
+                if (!sess || status < 0 || sess->cleaned.load()) return;
+                if (!(events & UV_READABLE)) return;
+                uint8_t buf[4096];
+                while (true) {
+                    ssize_t n = ::read(sess->stderr_fd, buf, sizeof(buf));
+                    if (n > 0)
+                        sess->emitDataChunk(new std::vector<uint8_t>(buf, buf + n),
+                                            sess->stderrTsfn, sess->stderrTsfnInit);
+                    else if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
+                        { sess->onPipeEof(1); break; }
+                    else break;
+                }
+            });
+
+        ok = ok && startPoll(session->donePoll, done_pipe[0],
+            [](uv_poll_t *h, int status, int events) {
+                auto *sess = static_cast<ExecSession *>(h->data);
+                if (!sess || status < 0) return;
+                if (!(events & UV_READABLE)) return;
+                int code = -1;
+                ::read(sess->done_rd, &code, sizeof(code));
+                sess->onWaitpidDone(code);
+            });
+
+        if (!ok) {
+            delete session;
+            deferred_.Reject(Napi::String::New(env, "Failed to start polling"));
+            return;
+        }
+
+        // Waitpid thread — writes exit code to done_pipe[1] then closes it
+        pid_t pid = pid_;
+        int done_wr = done_pipe[1];
+        std::thread([pid, done_wr]() {
+            int st = 0;
+            waitpid(pid, &st, 0);
+            int code = (WIFEXITED(st)) ? WEXITSTATUS(st) : -1;
+            ::write(done_wr, &code, sizeof(code));
+            ::close(done_wr);
+        }).detach();
+
+        // Build JS session object
+        Napi::Object obj = Napi::Object::New(env);
+        session->jsRef = new Napi::ObjectReference(Napi::Persistent(obj));
+
+        obj.DefineProperty(Napi::PropertyDescriptor::Value(
+            "_session", Napi::External<ExecSession>::New(env, session)));
+
+        obj.DefineProperty(Napi::PropertyDescriptor::Accessor(
+            "closed",
+            [](const Napi::CallbackInfo &ci) -> Napi::Value {
+                auto ext = ci.This().As<Napi::Object>().Get("_session");
+                if (!ext.IsExternal()) return Napi::Boolean::New(ci.Env(), true);
+                return Napi::Boolean::New(ci.Env(),
+                    ext.As<Napi::External<ExecSession>>().Data()->isClosed());
+            }));
+
+        obj.Set("on", Napi::Function::New(env, [session](const Napi::CallbackInfo &ci) -> Napi::Value {
+            Napi::Env e = ci.Env();
+            if (ci.Length() != 2 || !ci[0].IsString() || !ci[1].IsFunction()) {
+                Napi::TypeError::New(e, "on(event, callback)").ThrowAsJavaScriptException();
+                return e.Undefined();
+            }
+            if (session->isClosed()) {
+                Napi::Error::New(e, "Session is closed").ThrowAsJavaScriptException();
+                return e.Undefined();
+            }
+            std::string event = ci[0].ToString().Utf8Value();
+            Napi::Function cb  = ci[1].As<Napi::Function>();
+
+            auto makeTsfn = [&](Napi::ThreadSafeFunction &tsfn,
+                                 std::atomic<bool> &init,
+                                 const char *name) -> bool {
+                if (init.load()) {
+                    Napi::Error::New(e, std::string(name) + " listener already registered")
+                        .ThrowAsJavaScriptException();
+                    return false;
+                }
+                tsfn = Napi::ThreadSafeFunction::New(e, cb, name, 0, 1, [](Napi::Env) {});
+                init = true;
+                return true;
+            };
+
+            if      (event == "stdout") makeTsfn(session->stdoutTsfn, session->stdoutTsfnInit, "ExecStdout");
+            else if (event == "stderr") makeTsfn(session->stderrTsfn, session->stderrTsfnInit, "ExecStderr");
+            else if (event == "exit")   makeTsfn(session->exitTsfn,   session->exitTsfnInit,   "ExecExit");
+            else {
+                Napi::TypeError::New(e, "Supported events: 'stdout', 'stderr', 'exit'")
+                    .ThrowAsJavaScriptException();
+            }
+            return ci.This();
+        }));
+
+        obj.Set("kill", Napi::Function::New(env, [session](const Napi::CallbackInfo &ci) -> Napi::Value {
+            if (!session->isClosed() && session->pid > 0) {
+                int sig = (ci.Length() > 0 && ci[0].IsNumber())
+                          ? ci[0].ToNumber().Int32Value() : SIGTERM;
+                ::kill(session->pid, sig);
+            }
+            return ci.Env().Undefined();
+        }));
+
+        obj.AddFinalizer([](Napi::Env, ExecSession *s) {
+            if (s) { s->cleanup(); delete s; }
+        }, session);
+
+        deferred_.Resolve(obj);
+    }
+
+    void OnError(const Napi::Error &e) override {
+        Napi::HandleScope scope(Env());
+        deferred_.Reject(e.Value());
+    }
+
+private:
+    Napi::Promise::Deferred deferred_;
+    lxc_container           *_container;
+    lxc_attach_options_t    *opts_;
+    lxc_attach_command_t    *command_;
+    char                   **argv_;
+    uint32_t                 argvLen_, envVarsLen_, keepEnvLen_;
+    pid_t                    pid_ = -1;
+    int                      out_pipe_[2] = {-1, -1};
+    int                      err_pipe_[2] = {-1, -1};
+
+    void freeOpts() {
+        free(opts_->initial_cwd);
+        Array::free(opts_->extra_env_vars, envVarsLen_);
+        Array::free(opts_->extra_keep_env, keepEnvLen_);
+        free(opts_->lsm_label);
+#if VERSION_AT_LEAST(4, 0, 9)
+        delete[] opts_->groups.list;
+#endif
+        free(opts_);
+        Array::free(argv_, argvLen_);
+        free(command_);
+    }
+};
 
 Napi::Object Container::Init(Napi::Env env, Napi::Object exports) {
     Napi::Function func =
@@ -86,6 +483,8 @@ Napi::Object Container::Init(Napi::Env env, Napi::Object exports) {
                             InstanceMethod("devptsFd", &Container::DevptsFd),
 
                             InstanceMethod("exec", &Container::Exec),
+                            InstanceMethod("execOutput", &Container::ExecOutput),
+                            InstanceMethod("execAsync", &Container::ExecAsync),
 
                             InstanceMethod("setTimeout", &Container::SetTimeout),
                             InstanceMethod("mayControl", &Container::MayControl),
@@ -1186,6 +1585,211 @@ Napi::Value Container::ConsoleAsync(const Napi::CallbackInfo &info) {
     }, session);
 
     return consoleObj;
+}
+
+// ============================================================================
+// ExecOutput — capture stdout/stderr and return { exitCode, stdout, stderr }
+// ============================================================================
+
+// Shared option parsing helper (fills opts, leaves stdin/stdout/stderr for caller)
+static void parseExecOpts(const Napi::Object &options,
+                           lxc_attach_options_t *opts,
+                           uint32_t &envVarsLen,
+                           uint32_t &keepEnvLen) {
+    opts->attach_flags = opt_obj_val("attach_flags", ToNumber().Int32Value(), LXC_ATTACH_DEFAULT);
+    opts->namespaces   = opt_obj_val("namespaces",   ToNumber().Int32Value(), -1);
+    opts->personality  = opt_obj_val("personality",  As<Napi::BigInt>().Int64Value(nullptr),
+                                     LXC_ATTACH_DETECT_PERSONALITY);
+    opts->initial_cwd  = (char *)opt_strdup_val_checked("initial_cwd", nullptr);
+    opts->uid          = opt_obj_val("uid", ToNumber().Uint32Value(), (uid_t)-1);
+    opts->gid          = opt_obj_val("gid", ToNumber().Uint32Value(), (gid_t)-1);
+    opts->env_policy   = (lxc_attach_env_policy_t)opt_obj_val("env_policy",
+                          ToNumber().Int32Value(), LXC_ATTACH_CLEAR_ENV);
+    opts->log_fd       = opt_obj_val("log_fd", ToNumber().Int32Value(), -EBADF);
+    opts->lsm_label    = opt_strdup_val_checked("lsm_label", nullptr);
+    opts->stdin_fd     = 0;
+    opts->stdout_fd    = 1;
+    opts->stderr_fd    = 2;
+
+    if (opt_has_val_checked("extra_env_vars", IsArray()))
+        opts->extra_env_vars = Array::NapiToCharStarArray(
+            options.Get("extra_env_vars").As<Napi::Array>(), envVarsLen);
+    else
+        opts->extra_env_vars = nullptr;
+
+    if (opt_has_val_checked("extra_keep_env", IsArray()) && opts->env_policy == LXC_ATTACH_CLEAR_ENV)
+        opts->extra_keep_env = Array::NapiToCharStarArray(
+            options.Get("extra_keep_env").As<Napi::Array>(), keepEnvLen);
+    else
+        opts->extra_keep_env = nullptr;
+
+#if VERSION_AT_LEAST(4, 0, 9)
+    if (opt_has_val_checked("groups", IsArray())) {
+        auto jsG = options.Get("groups").As<Napi::Array>();
+        lxc_groups_t g = { .size = jsG.Length(),
+                            .list = jsG.Length() > 0 ? new gid_t[jsG.Length()] : nullptr };
+        if (g.list)
+            for (size_t i = 0; i < jsG.Length(); ++i)
+                g.list[i] = jsG.Get(i).ToNumber().Uint32Value();
+        opts->groups = g;
+    } else {
+        opts->groups = {};
+    }
+#endif
+}
+
+static void freeExecOpts(lxc_attach_options_t *opts,
+                          uint32_t envVarsLen, uint32_t keepEnvLen) {
+    free(opts->initial_cwd);
+    Array::free(opts->extra_env_vars, envVarsLen);
+    Array::free(opts->extra_keep_env, keepEnvLen);
+    free(opts->lsm_label);
+#if VERSION_AT_LEAST(4, 0, 9)
+    delete[] opts->groups.list;
+#endif
+    free(opts);
+}
+
+Napi::Value Container::ExecOutput(const Napi::CallbackInfo &info) {
+    auto deferred = Napi::Promise::Deferred::New(info.Env());
+    assert_deferred(_container, "Invalid container pointer")
+    check_deferred(info.Length() <= 0 || !info[0].IsObject(), "Invalid arguments")
+
+    auto *opts = (lxc_attach_options_t *)malloc(sizeof(lxc_attach_options_t));
+    uint32_t envVarsLen = 0, keepEnvLen = 0, argvLen = 0;
+
+    parseExecOpts(info[0].ToObject(), opts, envVarsLen, keepEnvLen);
+
+    auto options = info[0].ToObject();
+    if (!options.Has("argv") || !options.Get("argv").IsArray()) {
+        deferred.Reject(Napi::String::New(info.Env(), "execOutput requires argv array"));
+        freeExecOpts(opts, envVarsLen, keepEnvLen);
+        return deferred.Promise();
+    }
+
+    auto *argv = Array::NapiToCharStarArray(options.Get("argv").As<Napi::Array>(), argvLen);
+    if (argvLen == 0 || !argv || !argv[0]) {
+        Array::free(argv, argvLen);
+        deferred.Reject(Napi::String::New(info.Env(), "execOutput requires at least one argv entry"));
+        freeExecOpts(opts, envVarsLen, keepEnvLen);
+        return deferred.Promise();
+    }
+
+    auto *command    = (lxc_attach_command_t *)malloc(sizeof(lxc_attach_command_t));
+    command->program = argv[0];
+    command->argv    = argv;
+
+    using Result = AsyncPromise<int, std::string, std::string>;
+
+    auto *worker = new Result(
+        deferred,
+        [this, opts, command, argv, argvLen, envVarsLen, keepEnvLen](Result *w) {
+            int out_pipe[2] = {-1, -1}, err_pipe[2] = {-1, -1};
+            int devnull = open("/dev/null", O_RDONLY);
+
+            auto cleanup = [&]() {
+                freeExecOpts(opts, envVarsLen, keepEnvLen);
+                Array::free(argv, argvLen);
+                free(command);
+            };
+
+            if (pipe(out_pipe) < 0) {
+                w->Error("stdout pipe: " + std::string(strerror(errno)));
+                if (devnull >= 0) close(devnull);
+                cleanup();
+                return;
+            }
+            if (pipe(err_pipe) < 0) {
+                w->Error("stderr pipe: " + std::string(strerror(errno)));
+                close(out_pipe[0]); close(out_pipe[1]);
+                if (devnull >= 0) close(devnull);
+                cleanup();
+                return;
+            }
+
+            opts->stdin_fd  = devnull >= 0 ? devnull : 0;
+            opts->stdout_fd = out_pipe[1];
+            opts->stderr_fd = err_pipe[1];
+
+            pid_t pid;
+            int ret = _container->attach(_container, lxc_attach_run_command, command, opts, &pid);
+
+            close(out_pipe[1]);
+            close(err_pipe[1]);
+            if (devnull >= 0) close(devnull);
+            cleanup();
+
+            if (ret < 0) {
+                close(out_pipe[0]); close(err_pipe[0]);
+                w->Error("attach: " + std::string(strerror(errno)));
+                return;
+            }
+
+            std::string out_str, err_str;
+
+            auto read_all = [](int fd, std::string &dst) {
+                char buf[4096]; ssize_t n;
+                while ((n = ::read(fd, buf, sizeof(buf))) > 0) dst.append(buf, n);
+                ::close(fd);
+            };
+
+            std::thread t1(read_all, out_pipe[0], std::ref(out_str));
+            std::thread t2(read_all, err_pipe[0], std::ref(err_str));
+            t1.join(); t2.join();
+
+            int st = wait_for_pid_status(pid);
+            w->Result((st >= 0 && WIFEXITED(st)) ? WEXITSTATUS(st) : -1, out_str, err_str);
+        },
+        [](const Result *w, const std::tuple<int, std::string, std::string> &t) -> Napi::Value {
+            auto obj = Napi::Object::New(w->Env());
+            obj.Set("exitCode", Napi::Number::New(w->Env(), std::get<0>(t)));
+            obj.Set("stdout",   Napi::String::New(w->Env(), std::get<1>(t)));
+            obj.Set("stderr",   Napi::String::New(w->Env(), std::get<2>(t)));
+            return obj;
+        });
+
+    return worker->Promise();
+}
+
+// ============================================================================
+// ExecAsync — stream stdout/stderr as events, emit exit on process exit
+// ============================================================================
+
+Napi::Value Container::ExecAsync(const Napi::CallbackInfo &info) {
+    auto deferred = Napi::Promise::Deferred::New(info.Env());
+    assert_deferred(_container, "Invalid container pointer")
+    check_deferred(info.Length() <= 0 || !info[0].IsObject(), "Invalid arguments")
+
+    auto *opts = (lxc_attach_options_t *)malloc(sizeof(lxc_attach_options_t));
+    uint32_t envVarsLen = 0, keepEnvLen = 0, argvLen = 0;
+
+    parseExecOpts(info[0].ToObject(), opts, envVarsLen, keepEnvLen);
+
+    auto options = info[0].ToObject();
+    if (!options.Has("argv") || !options.Get("argv").IsArray()) {
+        deferred.Reject(Napi::String::New(info.Env(), "execAsync requires argv array"));
+        freeExecOpts(opts, envVarsLen, keepEnvLen);
+        return deferred.Promise();
+    }
+
+    auto *argv = Array::NapiToCharStarArray(options.Get("argv").As<Napi::Array>(), argvLen);
+    if (argvLen == 0 || !argv || !argv[0]) {
+        Array::free(argv, argvLen);
+        deferred.Reject(Napi::String::New(info.Env(), "execAsync requires at least one argv entry"));
+        freeExecOpts(opts, envVarsLen, keepEnvLen);
+        return deferred.Promise();
+    }
+
+    auto *command    = (lxc_attach_command_t *)malloc(sizeof(lxc_attach_command_t));
+    command->program = argv[0];
+    command->argv    = argv;
+
+    auto *worker = new ExecAsyncWorker(deferred, _container,
+                                        opts, command,
+                                        argv, argvLen,
+                                        envVarsLen, keepEnvLen);
+    worker->Queue();
+    return deferred.Promise();
 }
 
 void Container::SetConfigItem(const Napi::CallbackInfo &info) {

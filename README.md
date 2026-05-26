@@ -23,19 +23,15 @@
 - **Memory-safe** — no leaks; all heap buffers freed, all async captures by value
 - **TypeScript** — full type declarations included
 
-## Prerequisites
+## Requirements
 
-| Requirement | Version |
-|---|---|
-| Node.js | ≥ 12.17 |
-| LXC | ≥ 4.0 |
-| liblxc-dev | (same as LXC) |
-| g++ | ≥ 7 |
+- Node.js ≥ 12.17
+- LXC ≥ 4.0 (runtime library only)
 
 Install LXC on Debian/Ubuntu:
 
 ```sh
-sudo apt install lxc lxc-dev
+sudo apt install lxc
 ```
 
 Verify your kernel supports LXC features:
@@ -50,7 +46,14 @@ lxc-checkconfig
 npm install node-lxc
 ```
 
-The package ships a pre-built binary for `x86_64-linux-gnu`. No compilation step is required for this platform.
+Pre-built binaries are included for the following platforms — no compilation step required:
+
+| Architecture | GNU triplet |
+|---|---|
+| x86-64 | `x86_64-linux-gnu` |
+| ARM64 | `aarch64-linux-gnu` |
+
+Other Linux architectures must be [built from source](#building-from-source).
 
 ## Quick Start
 
@@ -162,6 +165,18 @@ await c.save(alt_file)
 ```typescript
 // Run a command; returns its exit code
 await c.exec({ argv: string[], ...lxc_attach_options })  // → number
+
+// Run a command and capture all output
+const { exitCode, stdout, stderr } = await c.execOutput({ argv: ["/bin/hostname"] });
+
+// Run a command and stream output as events
+const session = await c.execAsync({ argv: ["/usr/bin/top", "-b", "-n1"] });
+session
+  .on("stdout", (chunk: Buffer) => process.stdout.write(chunk))
+  .on("stderr", (chunk: Buffer) => process.stderr.write(chunk))
+  .on("exit",   (code: number)  => console.log("exit:", code));
+session.kill();          // send SIGTERM
+session.kill(9);         // send SIGKILL
 
 // Open a shell; returns the shell's exit code
 await c.attach(options?)                                  // → number
@@ -277,20 +292,29 @@ npm run example:execute
 npm run example:console_async
 ```
 
+---
+
 ## Building from Source
 
+Required additional dependencies:
+
+| Tool | Version |
+|---|---|
+| liblxc-dev | same as LXC |
+| g++ | ≥ 7 |
+| cmake | any recent |
+
 ```sh
-# Install system dependencies (Debian/Ubuntu)
-sudo apt install g++ lxc lxc-dev
+sudo apt install lxc lxc-dev g++ cmake
+```
 
-# Install npm dependencies
+Clone and build:
+
+```sh
+git clone https://github.com/SourceRegistry/node-lxc.git
+cd node-lxc
 npm install
-
-# Configure and build the native addon
-node-gyp configure
-node-gyp build
-
-# Compile TypeScript
+npx node-gyp configure && npx node-gyp build
 npx tsc --build
 ```
 

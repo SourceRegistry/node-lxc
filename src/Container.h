@@ -155,6 +155,12 @@ private:
     // Attach with no wait lxc_attach_run_command
     Napi::Value Exec(const Napi::CallbackInfo &info);
 
+    // Capture stdout+stderr, resolve with { exitCode, stdout, stderr }
+    Napi::Value ExecOutput(const Napi::CallbackInfo &info);
+
+    // Stream stdout/stderr as events, emit exit on process exit
+    Napi::Value ExecAsync(const Napi::CallbackInfo &info);
+
     Napi::Value Console(const Napi::CallbackInfo &info);
 
     Napi::Value SetTimeout(const Napi::CallbackInfo &info);

@@ -6,7 +6,7 @@
 import {
     bdev_specs, lxc_attach_options, lxc_clone_options,
     lxc_console_log, LXC_CREATE, LXC_MIGRATE, LXC_MOUNT, lxc_mount, lxc_snapshot, migrate_opts,
-    Image, ConsoleSession,
+    Image, ConsoleSession, ExecOutputResult, ExecSession,
 } from "./types";
 
 export * from "./types"
@@ -571,6 +571,38 @@ export type Container = {
      * @see {@link https://linuxcontainers.org/lxc/apidoc/structlxc__attach__options__t.html lxc_attach_options_t}
      */
     exec(options: Partial<lxc_attach_options> & { argv: string[] }): Promise<number>;
+
+    /**
+     * Run a command inside the container and capture its output.
+     * Internally creates pipes for stdout and stderr so the child never writes
+     * to the caller's terminal.  Both streams are collected in memory and
+     * returned when the process exits.
+     * @param options.argv {string[]} Command and arguments.
+     * @param options {Partial<lxc_attach_options>} Attach options (uid, gid, env, …). `stdio` is ignored.
+     * @returns {Promise<ExecOutputResult>} `{ exitCode, stdout, stderr }`.
+     */
+    execOutput(options: Omit<Partial<lxc_attach_options>, 'stdio'> & { argv: string[] }): Promise<ExecOutputResult>;
+
+    /**
+     * Run a command inside the container and stream its output as events.
+     * Resolves with a session object once the process has started.
+     * Register all listeners **before** the first `await` after this call so
+     * no output is lost between process start and listener registration.
+     *
+     * @example
+     * ```typescript
+     * const session = await c.execAsync({ argv: ['/usr/bin/top', '-b', '-n1'] });
+     * session
+     *   .on('stdout', chunk => process.stdout.write(chunk))
+     *   .on('stderr', chunk => process.stderr.write(chunk))
+     *   .on('exit',   code  => console.log('exit:', code));
+     * ```
+     *
+     * @param options.argv {string[]} Command and arguments.
+     * @param options {Partial<lxc_attach_options>} Attach options. `stdio` is ignored.
+     * @returns {Promise<ExecSession>} Active streaming session.
+     */
+    execAsync(options: Omit<Partial<lxc_attach_options>, 'stdio'> & { argv: string[] }): Promise<ExecSession>;
 
     /**
      * Set a global timeout for LXC operations on this container.
