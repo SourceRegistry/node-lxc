@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - "**"
+    paths:
+      - "src/**"
+      - "lib/**"
+      - "package.json"
   workflow_dispatch:
 
 concurrency:
