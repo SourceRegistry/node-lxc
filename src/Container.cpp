@@ -26,7 +26,6 @@ int wait_for_pid_status(pid_t pid);
 // ============================================================================
 // ExecSession — backing struct for execAsync()
 // ============================================================================
-
 struct ExecSession {
     int stdout_fd = -1;
     int stderr_fd = -1;
@@ -168,7 +167,6 @@ struct ExecSession {
 // ============================================================================
 // ExecAsyncWorker — runs lxc_attach off the main thread for execAsync()
 // ============================================================================
-
 class ExecAsyncWorker : public Napi::AsyncWorker {
 public:
     ExecAsyncWorker(const Napi::Promise::Deferred &deferred,
