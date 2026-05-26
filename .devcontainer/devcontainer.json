@@ -8,7 +8,7 @@
 
   // Mount the host's Claude Code session data so conversations persist across rebuilds
   "mounts": [
-    "source=${localEnv:HOME}/.claude,target=/root/.claude,type=bind,consistency=cached"
+    "source=${localEnv:USERPROFILE}/.claude,target=/root/.claude,type=bind,consistency=cached"
   ],
 
   // Install npm deps and build the native addon after the container is created
