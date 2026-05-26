@@ -5,7 +5,7 @@
       'sources': [ 'src/node-lxc.cpp', 'src/Container.cpp' ],
       'include_dirs': ["<!@(node -p \"require('node-addon-api').include\")","/usr/include/lxc"],
       'dependencies': ["<!(node -p \"require('node-addon-api').gyp\")"],
-      'libraries': ["/usr/lib/x86_64-linux-gnu/liblxc.so.1"],
+      'libraries': ["-llxc"],
       'defines': [
         "<!@(grep -qc 'set_timeout' /usr/include/lxc/lxccontainer.h 2>/dev/null && echo LXC_HAS_SET_TIMEOUT || true)"
       ],
