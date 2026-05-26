@@ -2,7 +2,7 @@
   "name": "node-lxc",
   "version": "1.0.0",
   "description": "Node.js native bindings for LXC (Linux Containers) — a complete, production-ready wrapper around liblxc built with N-API",
-  "homepage": "https://github.com/SourceRegistry/node-lxc#readme",
+  "homepage": "sourceregistry.github.io/node-lxc",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SourceRegistry/node-lxc.git"
