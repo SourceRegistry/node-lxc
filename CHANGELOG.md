@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/SourceRegistry/node-lxc/compare/v1.1.4...v1.1.5) (2026-05-26)
+
+
+### Bug Fixes
+
+* **try:** cgroup settings ([8a9d182](https://github.com/SourceRegistry/node-lxc/commit/8a9d1826de939e08d44b07698b1305644401c1a3))
+
 ## [1.1.4](https://github.com/SourceRegistry/node-lxc/compare/v1.1.3...v1.1.4) (2026-05-26)
 
 
