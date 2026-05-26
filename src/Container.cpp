@@ -892,21 +892,22 @@ Napi::Value Container::Destroy(const Napi::CallbackInfo &info) {
             auto ret = _container->get_config_item(_container, "lxc.ephemeral", buf, sizeof(buf));
             bool is_ephemeral = (ret > 0 && strcmp(buf, "1") == 0);
 
-            if (is_ephemeral && _container->is_running(_container)) {
+            if (_container->is_running(_container)) {
                 if (!force) {
-                    worker->Error("Cannot destroy running ephemeral container without force");
+                    worker->Error("Cannot destroy running container without force");
                     return;
                 }
                 if (!_container->stop(_container)) {
-                    worker->Error("Failed to stop ephemeral container");
+                    worker->Error("Failed to stop container before destroy");
                     return;
                 }
-                // Ephemeral containers auto-remove on stop
-                _container = nullptr;
-                return;
+                if (is_ephemeral) {
+                    // Ephemeral containers auto-remove on stop
+                    _container = nullptr;
+                    return;
+                }
             }
 
-            // Only destroy if not ephemeral
             if (_container->is_defined(_container)) {
                 if (include_snapshots) {
                     if (!_container->destroy_with_snapshots(_container)) {

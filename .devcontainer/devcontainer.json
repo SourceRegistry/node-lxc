@@ -14,6 +14,9 @@
   // Install npm deps and build the native addon after the container is created
   "postCreateCommand": "npm install && npm run configure && npm run build:test",
 
+  // Create lxcbr0 bridge on every container start (not persistent across restarts)
+  "postStartCommand": "ip link add lxcbr0 type bridge 2>/dev/null || true && ip addr add 10.0.3.1/24 dev lxcbr0 2>/dev/null || true && ip link set lxcbr0 up",
+
   // Configure tool-specific properties.
   "customizations": {
     "jetbrains": {
@@ -25,6 +28,7 @@
   // Required for LXC: grants SYS_ADMIN and other capabilities needed to create kernel namespaces (CLONE_NEWNS, CLONE_NEWUTS, etc.)
   "runArgs": [
     "--privileged",
+    "--cgroupns=host",
     "--security-opt", "apparmor=unconfined",
     "--security-opt", "seccomp=unconfined",
     "--tmpfs", "/run:exec,mode=755",
