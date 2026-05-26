@@ -819,7 +819,10 @@ Napi::Value Container::Create(const Napi::CallbackInfo &info) {
                 }
             };
             if (!_container->create(_container, template_.c_str(), bdevtype.c_str(), &specs, flags, argv)) {
-                worker->Error(strerror(errno));
+                std::string msg = _container->error_string
+                    ? std::string(_container->error_string)
+                    : strerror(_container->error_num ? _container->error_num : errno);
+                worker->Error(msg);
             }
             Array::free(argv, argvLength);
         });

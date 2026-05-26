@@ -11,7 +11,7 @@ async function main() {
         console.log("Container creating...");
         await c.create({
             template: "download",
-            argv: ["--dist", "ubuntu", "--release", "lunar", "--arch", "amd64"]
+            argv: ["--dist", "ubuntu", "--release", "noble", "--arch", "amd64"]
         });
         console.log("Created");
     }
