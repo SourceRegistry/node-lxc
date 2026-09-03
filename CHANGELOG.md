@@ -1,3 +1,11 @@
+## [1.1.7](https://github.com/SourceRegistry/node-lxc/compare/v1.1.6...v1.1.7) (2026-09-03)
+
+
+### Bug Fixes
+
+* **ci:** pin typescript devDependency and update tsconfig for TS 6.x ([f4da94c](https://github.com/SourceRegistry/node-lxc/commit/f4da94cd1dc2dda8791b41ded3d299fbfcbfeb98))
+* **native:** resolve dangling pointers, flag bug, and string-array leak ([362c738](https://github.com/SourceRegistry/node-lxc/commit/362c73850ebf8555b10668c1e5c981e57c1401ab))
+
 ## [1.1.6](https://github.com/SourceRegistry/node-lxc/compare/v1.1.5...v1.1.6) (2026-05-26)
 
 
