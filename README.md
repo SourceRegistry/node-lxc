@@ -55,6 +55,24 @@ Pre-built binaries are included for the following platforms — no compilation s
 
 Other Linux architectures must be [built from source](#building-from-source).
 
+## Known Limitations
+
+### Bun is not supported for console/exec streaming
+
+This addon loads and runs under [Bun](https://bun.sh) for everything except interactive streaming:
+
+- Module loading, `Container` construction, property accessors, and all `Promise`-based
+  methods (`start`, `stop`, `exec`, `execOutput`, snapshots, stats, etc.) work correctly under Bun.
+- **`consoleAsync()` and `execAsync()` crash the process under Bun** (tested on Bun 1.4.0, real
+  container). Both register a libuv `uv_poll_t` handle to stream pty/pipe output, and Bun's
+  napi/libuv compatibility layer does not implement `uv_poll_init` yet — the process aborts with
+  `panic(main thread): unsupported uv function: uv_poll_init`. Routing the addon through
+  `napi_get_uv_event_loop` instead of `uv_default_loop()` does not help; the missing piece is
+  `uv_poll_*` support itself, not loop acquisition.
+- Tracked upstream at [oven-sh/bun#18546](https://github.com/oven-sh/bun/issues/18546). Until Bun
+  implements `uv_poll_*`, use `consoleAsync`/`execAsync` under Node.js only. `exec`/`execOutput`
+  (non-streaming) are unaffected and safe to use under Bun.
+
 ## Quick Start
 
 ```typescript
@@ -170,6 +188,7 @@ await c.exec({ argv: string[], ...lxc_attach_options })  // → number
 const { exitCode, stdout, stderr } = await c.execOutput({ argv: ["/bin/hostname"] });
 
 // Run a command and stream output as events
+// ⚠ Node.js only — crashes under Bun, see "Known Limitations"
 const session = await c.execAsync({ argv: ["/usr/bin/top", "-b", "-n1"] });
 session
   .on("stdout", (chunk: Buffer) => process.stdout.write(chunk))
@@ -182,6 +201,7 @@ session.kill(9);         // send SIGKILL
 await c.attach(options?)                                  // → number
 
 // Non-blocking async console session (EventEmitter)
+// ⚠ Node.js only — crashes under Bun, see "Known Limitations"
 const session = await c.consoleAsync(ttynum?)  // → ConsoleSession
 session.on("data", (chunk: Buffer) => { ... });
 session.on("close", () => { ... });
