@@ -46,7 +46,8 @@
     "node-gyp": "^12.4.0",
     "semantic-release": "^25.0.9",
     "ts-node": "^10.9.2",
-    "typedoc": "^0.28.20"
+    "typedoc": "^0.28.20",
+    "typescript": "^6.0.3"
   },
   "scripts": {
     "install": "echo 'Prebuilt binary ships in bin/. Run: npx node-gyp build'",

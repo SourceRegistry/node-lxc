@@ -3,13 +3,16 @@
     "target": "esnext",
     "sourceMap": true,
     "outDir": "./build/tsc",
+    "rootDir": "./lib",
     "strict": true,
     "lib": [
       "dom",
       "esnext"
     ],
     "esModuleInterop": true,
+    "types": ["node"],
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "declaration": true,
     "module": "CommonJS",
     "noImplicitAny": false,
