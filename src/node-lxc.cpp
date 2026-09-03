@@ -4,6 +4,7 @@
  */
 
 #include <napi.h>
+#include <string>
 #include "Container.h"
 
 Napi::String GetVersion(const Napi::CallbackInfo &info) {
@@ -32,8 +33,8 @@ static Napi::Array NamesArrayToJS(Napi::Env env, char **names, int count) {
 Napi::Value ListAllContainers(const Napi::CallbackInfo &info) {
     Napi::Env env = info.Env();
     char **names = nullptr;
-    const char *path = info[0].IsString() ? info[0].ToString().Utf8Value().c_str()
-                                           : lxc_get_global_config_item("lxc.lxcpath");
+    std::string pathStr = info[0].IsString() ? info[0].ToString().Utf8Value() : std::string();
+    const char *path = info[0].IsString() ? pathStr.c_str() : lxc_get_global_config_item("lxc.lxcpath");
     int count = list_all_containers(path, &names, nullptr);
     if (count < 0) {
         Napi::Error::New(env, strerror(errno)).ThrowAsJavaScriptException();
@@ -45,8 +46,8 @@ Napi::Value ListAllContainers(const Napi::CallbackInfo &info) {
 Napi::Value ListAllDefinedContainers(const Napi::CallbackInfo &info) {
     Napi::Env env = info.Env();
     char **names = nullptr;
-    const char *path = info[0].IsString() ? info[0].ToString().Utf8Value().c_str()
-                                           : lxc_get_global_config_item("lxc.lxcpath");
+    std::string pathStr = info[0].IsString() ? info[0].ToString().Utf8Value() : std::string();
+    const char *path = info[0].IsString() ? pathStr.c_str() : lxc_get_global_config_item("lxc.lxcpath");
     int count = list_defined_containers(path, &names, nullptr);
     if (count < 0) {
         Napi::Error::New(env, strerror(errno)).ThrowAsJavaScriptException();
@@ -58,8 +59,8 @@ Napi::Value ListAllDefinedContainers(const Napi::CallbackInfo &info) {
 Napi::Value ListAllActiveContainers(const Napi::CallbackInfo &info) {
     Napi::Env env = info.Env();
     char **names = nullptr;
-    const char *path = info[0].IsString() ? info[0].ToString().Utf8Value().c_str()
-                                           : lxc_get_global_config_item("lxc.lxcpath");
+    std::string pathStr = info[0].IsString() ? info[0].ToString().Utf8Value() : std::string();
+    const char *path = info[0].IsString() ? pathStr.c_str() : lxc_get_global_config_item("lxc.lxcpath");
     int count = list_active_containers(path, &names, nullptr);
     if (count < 0) {
         Napi::Error::New(env, strerror(errno)).ThrowAsJavaScriptException();

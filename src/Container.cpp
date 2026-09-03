@@ -1895,7 +1895,7 @@ Napi::Value Container::Attach(const Napi::CallbackInfo &info) {
                     groups.list[i] = jsGroups.Get(i).ToNumber().Uint32Value();
                 }
                 attach_options->groups = groups;
-                attach_options->attach_flags &= LXC_ATTACH_SETGROUPS;
+                attach_options->attach_flags |= LXC_ATTACH_SETGROUPS;
             }
         } else {
             attach_options->groups = {};
@@ -2014,7 +2014,7 @@ Napi::Value Container::Exec(const Napi::CallbackInfo &info) {
                 groups.list[i] = jsGroups.Get(i).ToNumber().Uint32Value();
             }
             attach_options->groups = groups;
-            attach_options->attach_flags &= LXC_ATTACH_SETGROUPS;
+            attach_options->attach_flags |= LXC_ATTACH_SETGROUPS;
         }
     } else {
         attach_options->groups = {};
@@ -2399,14 +2399,14 @@ Napi::Value Container::Migrate(const Napi::CallbackInfo &info) {
 
     auto opts = (struct migrate_opts *) calloc(1, sizeof(migrate_opts));
 
-    opts->directory = opt_obj_val("directory", ToString().Utf8Value().data(), nullptr);
+    opts->directory = opt_strdup_val_checked("directory", nullptr);
     opts->verbose = opt_obj_val("verbose", ToBoolean(), false);
     opts->stop = opt_obj_val("stop", ToBoolean(), false);
-    opts->predump_dir = opt_obj_val("predump_dir", ToString().Utf8Value().data(), nullptr);
-    opts->pageserver_address = opt_obj_val("pageserver_address", ToString().Utf8Value().data(), nullptr);
-    opts->pageserver_port = opt_obj_val("pageserver_port", ToString().Utf8Value().data(), nullptr);
+    opts->predump_dir = opt_strdup_val_checked("predump_dir", nullptr);
+    opts->pageserver_address = opt_strdup_val_checked("pageserver_address", nullptr);
+    opts->pageserver_port = opt_strdup_val_checked("pageserver_port", nullptr);
     opts->preserves_inodes = opt_obj_val("preserves_inodes", ToBoolean(), false);
-    opts->action_script = opt_obj_val("action_script", ToString().Utf8Value().data(), nullptr);
+    opts->action_script = opt_strdup_val_checked("action_script", nullptr);
     opts->disable_skip_in_flight = opt_obj_val("disable_skip_in_flight", ToBoolean(), false);
     opts->ghost_limit = opt_obj_val("ghost_limit", As<Napi::BigInt>().Uint64Value(nullptr), 0);
     opts->features_to_check = opt_obj_val("features_to_check", As<Napi::BigInt>().Uint64Value(nullptr), 0);
@@ -2424,6 +2424,11 @@ Napi::Value Container::Migrate(const Napi::CallbackInfo &info) {
                 worker->Error("Unable to migrate " + std::string(_container->name));
             }
         cleanup:
+            free(const_cast<char *>(opts->directory));
+            free(const_cast<char *>(opts->predump_dir));
+            free(const_cast<char *>(opts->pageserver_address));
+            free(const_cast<char *>(opts->pageserver_port));
+            free(const_cast<char *>(opts->action_script));
             free(opts);
         });
     return worker->Promise();

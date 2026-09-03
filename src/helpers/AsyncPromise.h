@@ -35,6 +35,7 @@ public:
         if (values != nullptr) {
             for (int i = 0; values[i] != nullptr; ++i) {
                 array[i] = Napi::String::New(worker->Env(), values[i]);
+                free(values[i]);
             }
             free(values);
         }
